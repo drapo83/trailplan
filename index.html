@@ -62,8 +62,10 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 /* screens */
 .screen{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:none;flex-direction:column}
 .screen.active{display:flex}
-.fullscreen{flex:1;display:none;flex-direction:column;overflow:hidden}
+.fullscreen{flex:1;min-height:0;display:none;flex-direction:column;overflow:hidden}
 .fullscreen.active{display:flex}
+/* When fullscreen is active, hide the topbar's bottom border overlap */
+#app{position:relative}
 
 /* ── SETUP ── */
 .sec{padding:15px 16px;border-bottom:0.5px solid var(--border)}
@@ -113,7 +115,8 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── ROUTES MAP ── */
-#map-routes{width:100%;flex:1;min-height:0}
+#map-routes{width:100%;flex:1;min-height:200px;display:block}
+#map-nav{width:100%;flex:1;min-height:200px;display:block}
 .map-header{display:flex;align-items:center;gap:10px;padding:10px 14px 8px;border-bottom:0.5px solid var(--border);background:var(--surface);flex-shrink:0}
 .back{width:32px;height:32px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;border:0.5px solid var(--border);cursor:pointer;font-size:17px;color:var(--text-2);flex-shrink:0;transition:all .15s}
 .back:active{background:var(--gray-100)}
@@ -281,7 +284,7 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
       </div>
     </div>
     <div class="rtabs" id="rtabs"></div>
-    <div id="map-routes"></div>
+    <div id="map-routes" style="flex:1;min-height:0;width:100%"></div>
     <div class="map-bottom">
       <div class="srow" id="srow"></div>
       <div class="brow">
@@ -313,7 +316,7 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
         <div class="lg"><div class="lv big coral" id="ln-kcal">0</div><div class="ll">kcal</div></div>
       </div>
     </div>
-    <div id="map-nav"></div>
+    <div id="map-nav" style="flex:1;min-height:0;width:100%"></div>
     <div class="nav-bottom">
       <div class="bo" style="flex:none;padding:10px 14px" onclick="centerOnUser()">📍</div>
       <div class="bo" onclick="openNavExternal()">🧭 Zewn. nawigacja</div>
@@ -548,38 +551,39 @@ function switchTile(map, key) {
 }
 
 // ── Routes map ────────────────────────────────────────────────────────────
+function waitForSize(id, cb, tries=0) {
+  const el = document.getElementById(id);
+  if (el && el.offsetHeight > 80 && el.offsetWidth > 80) { cb(el); return; }
+  if (tries > 40) { console.warn('timeout waiting for', id); cb(el); return; }
+  setTimeout(() => waitForSize(id, cb, tries + 1), 30);
+}
+
 function initMapRoutes() {
   if (S.mapR) {
-    // Already exists — just invalidate size and re-render
-    requestAnimationFrame(() => {
-      S.mapR.invalidateSize();
-      drawRouteLayers();
-    });
+    S.mapR.invalidateSize(true);
+    drawRouteLayers();
     return;
   }
-  S.mapR = L.map('map-routes', { zoomControl: true, attributionControl: true })
-             .setView([S.lat, S.lng], 13);
-  makeTileLayer(currentTile).addTo(S.mapR);
-
-  // Wait for the container to be fully painted before invalidating
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      S.mapR.invalidateSize();
-      drawRouteLayers();
-    });
+  waitForSize('map-routes', () => {
+    S.mapR = L.map('map-routes', { zoomControl: true, attributionControl: true })
+               .setView([S.lat, S.lng], 13);
+    makeTileLayer(currentTile).addTo(S.mapR);
+    S.mapR.invalidateSize(true);
+    drawRouteLayers();
+    document.querySelectorAll('.tile-btn').forEach(b =>
+      b.classList.toggle('act', b.dataset.tile === currentTile));
   });
 }
 
 function renderRoutes() {
-  // Show screen first so container has real dimensions
   showScreen('scr-routes');
   renderTabs(); updateStats();
   $('mht').textContent = `${S.mode==='bike'?'Trasy rowerowe':'Szlaki piesze'} ~${S.dist} km`;
   $('mhs').textContent = `${S.locName} · ${S.routes.length} wariant${S.routes.length===1?'':'y'}`;
-  // Mark active tile btn
-  document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
-  // Delay map init until after paint
-  setTimeout(() => initMapRoutes(), 80);
+  document.querySelectorAll('.tile-btn').forEach(b =>
+    b.classList.toggle('act', b.dataset.tile === currentTile));
+  // Let browser paint screen first, then init map
+  requestAnimationFrame(() => requestAnimationFrame(() => initMapRoutes()));
 }
 
 function drawRouteLayers() {
@@ -606,8 +610,10 @@ function drawRouteLayers() {
 
     const bounds = L.polyline(active.coords).getBounds();
     S.mapR.fitBounds(bounds, { padding: [32, 32], animate: false });
-    // Second fitBounds after map is fully sized
-    setTimeout(() => { S.mapR.invalidateSize(); S.mapR.fitBounds(bounds, { padding: [32, 32] }); }, 300);
+    setTimeout(() => {
+      S.mapR.invalidateSize(true);
+      S.mapR.fitBounds(bounds, { padding: [32, 32], animate: false });
+    }, 250);
   }
 }
 
@@ -640,11 +646,15 @@ function updateStats(){
 }
 
 // ── Navigation map ────────────────────────────────────────────────────────
-function initMapNav() {
-  if (S.mapN) { requestAnimationFrame(() => S.mapN.invalidateSize()); return; }
-  S.mapN = L.map('map-nav', { zoomControl: false, attributionControl: true }).setView([S.lat, S.lng], 15);
-  makeTileLayer(currentTile).addTo(S.mapN);
-  requestAnimationFrame(() => requestAnimationFrame(() => S.mapN.invalidateSize()));
+function initMapNav(cb) {
+  if (S.mapN) { S.mapN.invalidateSize(true); if (cb) cb(); return; }
+  waitForSize('map-nav', () => {
+    S.mapN = L.map('map-nav', { zoomControl: false, attributionControl: true })
+               .setView([S.lat, S.lng], 15);
+    makeTileLayer(currentTile).addTo(S.mapN);
+    S.mapN.invalidateSize(true);
+    if (cb) cb();
+  });
 }
 
 function startNav() {
@@ -675,68 +685,129 @@ function startNav() {
   }, 80);
 
   $('nav-route-name').textContent = r.name + ' · ' + r.distKm + ' km';
-  // highlight default tile btn
   document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
 
   S.nav = {
-    startTime: Date.now(), dist: 0, lastPos: null,
-    timer: null, watchId: null,
-    speedHistory: [], maxSpd: 0,
+    startTime: null,        // starts only on first GPS fix
+    dist: 0,
+    lastPos: null,
+    lastPosTime: null,
+    lastSpd: 0,
+    timer: null,
+    watchId: null,
+    speedHistory: [],
+    maxSpd: 0,
+    movingMs: 0,            // only time actually moving
     kcalPerKm: S.mode==='bike' ? 35 : 65,
-    route: r
+    route: r,
+    gpsReady: false
   };
 
-  if (navigator.geolocation) {
-    S.nav.watchId = navigator.geolocation.watchPosition(onNavPos, () => {}, {enableHighAccuracy: true, maximumAge: 2000});
+  // Show waiting state
+  $('ln-spd').textContent = '—';
+  $('ln-dist').textContent = '—';
+  $('ln-time').textContent = '—:—';
+  $('ln-kcal').textContent = '—';
+
+  if (!navigator.geolocation) {
+    toast('⚠️ GPS niedostępny na tym urządzeniu');
+    return;
   }
+
+  // Start watching position
+  S.nav.watchId = navigator.geolocation.watchPosition(
+    onNavPos,
+    (err) => { toast('⚠️ Błąd GPS: ' + (err.code === 1 ? 'brak uprawnień' : 'brak sygnału')); },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+  );
+
+  // Timer only updates display — no counting without GPS
   S.nav.timer = setInterval(navTick, 1000);
-  navTick();
 }
 
 function onNavPos(pos) {
-  const {latitude:lat,longitude:lng,speed} = pos.coords;
-  const spd = speed!=null ? fx(speed*3.6,1) : null; // m/s → km/h
+  const { latitude: lat, longitude: lng, speed, accuracy } = pos.coords;
+  const n = S.nav;
+  if (!n) return;
 
-  // Move/create user marker
-  const pos2=[lat,lng];
-  if(!S.posMarker){
-    const ui=L.divIcon({html:'<div style="width:18px;height:18px;border-radius:50%;background:var(--green);border:3px solid white;box-shadow:0 2px 8px rgba(29,158,117,.6)"></div>',iconAnchor:[9,9],className:''});
-    S.posMarker=L.marker(pos2,{icon:ui,zIndexOffset:1000}).addTo(S.mapN);
+  // First fix — start the clock and mark GPS as ready
+  if (!n.gpsReady) {
+    n.gpsReady = true;
+    n.startTime = Date.now();
+    n.lastPos = [lat, lng];
+    n.lastPosTime = Date.now();
+    toast('📍 GPS gotowy — startujemy!');
+  }
+
+  // Update position marker on map
+  const pos2 = [lat, lng];
+  if (!S.posMarker) {
+    const ui = L.divIcon({ html: '<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;border:3px solid white;box-shadow:0 2px 8px rgba(29,158,117,.6)"></div>', iconAnchor:[9,9], className:'' });
+    S.posMarker = L.marker(pos2, { icon: ui, zIndexOffset: 1000 }).addTo(S.mapN);
+    S.mapN.setView(pos2, 15);
   } else {
     S.posMarker.setLatLng(pos2);
   }
 
-  // Distance increment
-  if(S.nav.lastPos){
-    const d=haversine(S.nav.lastPos[0],S.nav.lastPos[1],lat,lng);
-    if(d>0.005 && d<0.5) { // ignore noise <5m and jumps >500m
-      S.nav.dist+=d;
+  // ── Speed: use GPS speed field if available, else derive from positions ──
+  let spdKmh = 0;
+  if (speed != null && speed >= 0) {
+    spdKmh = speed * 3.6; // m/s → km/h
+  } else if (n.lastPos && n.lastPosTime) {
+    const dtSec = (Date.now() - n.lastPosTime) / 1000;
+    if (dtSec > 0) {
+      const dm = haversine(n.lastPos[0], n.lastPos[1], lat, lng) * 1000; // metres
+      spdKmh = (dm / dtSec) * 3.6;
     }
   }
-  S.nav.lastPos=[lat,lng];
 
-  // Speed from GPS or computed
-  if(spd!==null && spd>=0) {
-    S.nav.lastSpd=spd;
-    if(spd>S.nav.maxSpd) S.nav.maxSpd=spd;
+  // Clamp noise: below 1.5 km/h treat as stationary, above 80 (bike) / 25 (walk) treat as GPS jump
+  const maxPlausible = S.mode === 'bike' ? 80 : 25;
+  if (spdKmh < 1.5) spdKmh = 0;
+  if (spdKmh > maxPlausible) spdKmh = 0;
+
+  n.lastSpd = spdKmh;
+  if (spdKmh > n.maxSpd) n.maxSpd = spdKmh;
+
+  // ── Distance: only add when actually moving (speed > threshold) ──
+  if (n.lastPos && spdKmh > 1.5) {
+    const d = haversine(n.lastPos[0], n.lastPos[1], lat, lng);
+    // Sanity: ignore GPS jumps > 200m between readings
+    if (d > 0 && d < 0.2) {
+      n.dist += d;
+    }
   }
-  S.nav.speedHistory.push({t:Date.now(),spd:S.nav.lastSpd||0});
+
+  n.lastPos = [lat, lng];
+  n.lastPosTime = Date.now();
+
+  // Record speed sample (only when GPS is ready)
+  n.speedHistory.push({ t: Date.now(), spd: spdKmh });
 }
 
 function navTick() {
-  const n=S.nav; if(!n) return;
-  const elapsed=Math.floor((Date.now()-n.startTime)/1000);
-  const mm=Math.floor(elapsed/60).toString().padStart(2,'0');
-  const ss=(elapsed%60).toString().padStart(2,'0');
-  const distKm=fx(n.dist,2);
-  const spd=n.lastSpd!=null?fx(n.lastSpd,1):0;
-  const avgSpd=elapsed>5&&distKm>0?fx(distKm/(elapsed/3600),1):0;
-  const kcal=Math.round(distKm*n.kcalPerKm);
+  const n = S.nav; if (!n) return;
 
-  $('ln-spd').textContent=spd.toFixed(1);
-  $('ln-dist').textContent=distKm.toFixed(2);
-  $('ln-time').textContent=mm+':'+ss;
-  $('ln-kcal').textContent=kcal;
+  // Before first GPS fix — show waiting indicators
+  if (!n.gpsReady) {
+    $('ln-spd').textContent = '…';
+    $('ln-dist').textContent = '…';
+    $('ln-time').textContent = '…';
+    $('ln-kcal').textContent = '…';
+    return;
+  }
+
+  const elapsed = Math.floor((Date.now() - n.startTime) / 1000);
+  const mm = Math.floor(elapsed / 60).toString().padStart(2, '0');
+  const ss = (elapsed % 60).toString().padStart(2, '0');
+  const distKm = fx(n.dist, 2);
+  const spdDisplay = fx(n.lastSpd, 1);
+  const kcal = Math.round(distKm * n.kcalPerKm);
+
+  $('ln-spd').textContent = spdDisplay.toFixed(1);
+  $('ln-dist').textContent = distKm.toFixed(2);
+  $('ln-time').textContent = mm + ':' + ss;
+  $('ln-kcal').textContent = kcal;
 }
 
 function centerOnUser() {
@@ -766,12 +837,13 @@ function stopNav() {
 // ── Summary ───────────────────────────────────────────────────────────────
 function showSummary(n) {
   showScreen('scr-summary');
-  const elapsed=Math.floor((Date.now()-n.startTime)/1000);
-  const distKm=fx(n.dist,2)||fx(n.route.distKm,1);
-  const mm=Math.floor(elapsed/60), ss=elapsed%60;
-  const avgSpd=elapsed>0?fx(distKm/(elapsed/3600),1):0;
-  const kcal=Math.round(distKm*n.kcalPerKm);
-  const mode=S.mode==='bike'?'🚴':'🥾';
+  const elapsed = n.startTime ? Math.floor((Date.now() - n.startTime) / 1000) : 0;
+  const distKm = fx(n.dist, 2);
+  const mm = Math.floor(elapsed / 60), ss = elapsed % 60;
+  const avgSpd = elapsed > 0 && distKm > 0 ? fx(distKm / (elapsed / 3600), 1) : 0;
+  const kcal = Math.round(distKm * n.kcalPerKm);
+  const pace = distKm > 0 ? `${Math.floor(elapsed/distKm/60)}'${Math.round((elapsed/distKm)%60).toString().padStart(2,'0')}"` : '—';
+  const mode = S.mode === 'bike' ? '🚴' : '🥾';
 
   $('sum-title').textContent=n.route.name+' · ukończona!';
   $('sum-sub').textContent=`${mode} ${S.mode==='bike'?'Jazda rowerem':'Marsz'} · ${new Date().toLocaleDateString('pl')}`;
@@ -782,7 +854,7 @@ function showSummary(n) {
     <div class="scard"><span class="sicon">⚡</span><div class="sl">Śr. prędkość</div><div class="sv">${avgSpd}<span class="su"> km/h</span></div></div>
     <div class="scard"><span class="sicon">🚀</span><div class="sl">Maks. prędkość</div><div class="sv">${fx(n.maxSpd,1)}<span class="su"> km/h</span></div></div>
     <div class="scard"><span class="sicon">🔥</span><div class="sl">Kalorie</div><div class="sv">${kcal}<span class="su"> kcal</span></div></div>
-    <div class="scard"><span class="sicon">⏰</span><div class="sl">Tempo</div><div class="sv">${distKm>0?Math.round(elapsed/distKm/60)+'\''+Math.round((elapsed/distKm)%60).toString().padStart(2,'0')+'\"':'—'}</div></div>
+    <div class="scard"><span class="sicon">⏰</span><div class="sl">Tempo</div><div class="sv">${pace}</div></div>
   `;
 
   // Speed chart
