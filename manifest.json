@@ -1,0 +1,22 @@
+{
+  "name": "TrailPlan – Planer Tras",
+  "short_name": "TrailPlan",
+  "description": "Planuj trasy rowerowe i piesze w swojej okolicy",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#1D9E75",
+  "lang": "pl",
+  "categories": ["sports", "navigation", "travel"],
+  "icons": [
+    { "src": "icons/icon-32.png",  "sizes": "32x32",   "type": "image/png" },
+    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "apple touch icon" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Nowa trasa rowerowa", "url": "/index.html?mode=bike", "description": "Szybko zaplanuj trasę rowerową" },
+    { "name": "Nowy szlak pieszy",   "url": "/index.html?mode=hike", "description": "Szybko zaplanuj wycieczkę pieszą" }
+  ]
+}

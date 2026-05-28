@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1D9E75">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="TrailPlan">
+<meta name="description" content="Planuj trasy rowerowe i piesze w swojej okolicy z pomocą AI">
+<title>TrailPlan – Planer Tras</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --green:      #1D9E75;
+  --green-dark: #0F6E56;
+  --green-mid:  #5DCAA5;
+  --green-pale: #E1F5EE;
+  --green-light:#9FE1CB;
+  --blue:       #378ADD;
+  --blue-pale:  #E6F1FB;
+  --amber:      #EF9F27;
+  --amber-pale: #FAEEDA;
+  --coral:      #D85A30;
+  --coral-pale: #FAECE7;
+  --gray-50:    #F7F7F5;
+  --gray-100:   #EEECEA;
+  --gray-200:   #D4D2CC;
+  --gray-400:   #888780;
+  --gray-600:   #5F5E5A;
+  --gray-900:   #1A1A18;
+  --text:       #1A1A18;
+  --text-2:     #5F5E5A;
+  --text-3:     #888780;
+  --border:     rgba(0,0,0,0.09);
+  --border-md:  rgba(0,0,0,0.14);
+  --surface:    #ffffff;
+  --surface-2:  #F7F7F5;
+  --radius:     12px;
+  --radius-sm:  8px;
+  --radius-lg:  18px;
+  --safe-top:   env(safe-area-inset-top, 0px);
+  --safe-bot:   env(safe-area-inset-bottom, 0px);
+  --font:       'DM Sans', sans-serif;
+  --mono:       'DM Mono', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --green:      #3DC99A;
+    --green-dark: #5DCAA5;
+    --green-mid:  #1D9E75;
+    --green-pale: #0a2e22;
+    --green-light:#0F6E56;
+    --blue-pale:  #0c2a45;
+    --amber-pale: #2a1e08;
+    --coral-pale: #2e1008;
+    --gray-50:    #1E1E1C;
+    --gray-100:   #272725;
+    --gray-200:   #3A3A38;
+    --gray-400:   #6E6D6A;
+    --gray-600:   #A8A7A2;
+    --gray-900:   #F0EFEA;
+    --text:       #F0EFEA;
+    --text-2:     #B4B2A9;
+    --text-3:     #6E6D6A;
+    --border:     rgba(255,255,255,0.09);
+    --border-md:  rgba(255,255,255,0.14);
+    --surface:    #1E1E1C;
+    --surface-2:  #272725;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; font-family: var(--font); background: var(--surface); color: var(--text); font-size: 16px; }
+
+/* ── App shell ── */
+#app { display: flex; flex-direction: column; height: 100dvh; max-width: 430px; margin: 0 auto; position: relative; overflow: hidden; }
+
+/* ── Status bar ── */
+.status-bar { padding-top: var(--safe-top); background: var(--surface); flex-shrink: 0; }
+
+/* ── Top bar ── */
+.topbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px 10px; border-bottom: 0.5px solid var(--border); background: var(--surface); position: relative; }
+.topbar-logo { width: 34px; height: 34px; background: var(--green); border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.topbar-logo svg { width: 20px; height: 20px; }
+.topbar-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.topbar-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.gps-pill { margin-left: auto; display: flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 20px; background: var(--green-pale); font-size: 11px; font-weight: 500; color: var(--green-dark); border: 0.5px solid var(--green-light); transition: all 0.3s; cursor: pointer; user-select: none; }
+.gps-pill.searching { background: var(--amber-pale); color: var(--amber); border-color: var(--amber); }
+.gps-pill.error { background: var(--coral-pale); color: var(--coral); border-color: var(--coral); }
+.gps-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.gps-dot.pulse { animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+
+/* ── Screens ── */
+.screen { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: none; flex-direction: column; padding-bottom: calc(16px + var(--safe-bot)); }
+.screen.active { display: flex; }
+
+/* ── Setup screen ── */
+.section { padding: 18px 16px; border-bottom: 0.5px solid var(--border); }
+.section:last-child { border: none; }
+.section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; }
+
+.mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mode-card { border: 1.5px solid var(--border); border-radius: var(--radius); padding: 16px 12px 14px; cursor: pointer; transition: all 0.18s; text-align: center; background: var(--surface); user-select: none; -webkit-user-select: none; }
+.mode-card:active { transform: scale(0.97); }
+.mode-card.selected { border-color: var(--green); background: var(--green-pale); }
+.mode-icon { font-size: 32px; margin-bottom: 8px; display: block; }
+.mode-name { font-size: 14px; font-weight: 500; color: var(--text); }
+.mode-hint { font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.35; }
+.mode-card.selected .mode-name { color: var(--green-dark); }
+
+.dist-row { display: flex; align-items: center; gap: 14px; }
+.dist-display { text-align: center; min-width: 72px; }
+.dist-val { font-size: 36px; font-weight: 300; color: var(--text); line-height: 1; font-family: var(--mono); }
+.dist-unit { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+.dist-slider { flex: 1; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: var(--gray-200); outline: none; }
+.dist-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--green); border: 2.5px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.2); cursor: pointer; }
+.dist-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--green); border: 2.5px solid var(--surface); cursor: pointer; }
+.presets { display: flex; gap: 7px; margin-top: 14px; flex-wrap: wrap; }
+.preset { font-size: 12px; font-weight: 500; padding: 6px 13px; border: 1px solid var(--border-md); border-radius: 20px; background: transparent; color: var(--text-2); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.preset:active { transform: scale(0.95); }
+.preset.active { background: var(--green); border-color: var(--green); color: white; }
+
+.toggle-row { display: flex; align-items: center; gap: 14px; }
+.toggle-text { flex: 1; }
+.toggle-text .label { font-size: 14px; font-weight: 500; color: var(--text); }
+.toggle-text .sub { font-size: 12px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
+.toggle { width: 46px; height: 26px; border-radius: 13px; background: var(--gray-200); position: relative; cursor: pointer; transition: background 0.22s; flex-shrink: 0; }
+.toggle.on { background: var(--green); }
+.toggle::after { content: ''; position: absolute; width: 20px; height: 20px; background: white; border-radius: 50%; top: 3px; left: 3px; transition: transform 0.22s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.toggle.on::after { transform: translateX(20px); }
+
+.loc-box { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius); border: 0.5px solid var(--border); }
+.loc-pin { width: 36px; height: 36px; background: var(--green-pale); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+.loc-info { flex: 1; min-width: 0; }
+.loc-name { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loc-coords { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-top: 2px; }
+.loc-refresh { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 0.5px solid var(--border-md); background: var(--surface); cursor: pointer; font-size: 16px; transition: transform 0.3s; }
+.loc-refresh:active { transform: rotate(180deg); }
+
+.gen-btn { margin: 0 16px 6px; background: var(--green); color: white; border: none; border-radius: var(--radius-lg); padding: 16px 20px; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 9px; letter-spacing: -0.01em; font-family: var(--font); transition: all 0.18s; box-shadow: 0 2px 12px rgba(29,158,117,0.3); }
+.gen-btn:active { transform: scale(0.98); background: var(--green-dark); }
+.gen-btn:disabled { background: var(--gray-200); color: var(--text-3); box-shadow: none; cursor: default; }
+.gen-btn .spinner { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.35); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Routes screen ── */
+.screen-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px 10px; border-bottom: 0.5px solid var(--border); flex-shrink: 0; }
+.back { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; border: 0.5px solid var(--border); cursor: pointer; font-size: 18px; color: var(--text-2); transition: all 0.15s; flex-shrink: 0; }
+.back:active { background: var(--gray-100); }
+.sh-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.sh-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+.map-preview { margin: 12px 16px; height: 170px; border-radius: var(--radius); background: var(--green-pale); border: 0.5px solid var(--green-light); position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.map-preview canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.map-icon { font-size: 32px; }
+.map-label { font-size: 12px; font-weight: 500; color: var(--green-dark); background: var(--surface); padding: 5px 12px; border-radius: 20px; border: 0.5px solid var(--green-light); }
+
+.routes-list { padding: 8px 0; flex: 1; }
+.route-card { margin: 0 16px 10px; border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: border-color 0.18s, box-shadow 0.18s; background: var(--surface); }
+.route-card:active { transform: scale(0.99); }
+.route-card.selected { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.12); }
+.rc-head { padding: 13px 14px 9px; display: flex; align-items: flex-start; gap: 11px; }
+.rc-badge { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; flex-shrink: 0; }
+.badge-a { background: var(--blue-pale); color: var(--blue); }
+.badge-b { background: var(--green-pale); color: var(--green-dark); }
+.badge-c { background: var(--amber-pale); color: var(--amber); }
+.rc-info { flex: 1; }
+.rc-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.rc-desc { font-size: 12px; color: var(--text-2); margin-top: 3px; line-height: 1.45; }
+.rc-stats { display: flex; gap: 0; background: var(--surface-2); border-top: 0.5px solid var(--border); }
+.rc-stat { flex: 1; padding: 9px 10px; text-align: center; border-right: 0.5px solid var(--border); }
+.rc-stat:last-child { border-right: none; }
+.rc-stat .sv { font-size: 14px; font-weight: 600; color: var(--text); font-family: var(--mono); }
+.rc-stat .sl { font-size: 10px; color: var(--text-3); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.04em; }
+.rc-tags { padding: 8px 14px 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 12px; background: var(--green-pale); color: var(--green-dark); }
+.tag.warn { background: var(--amber-pale); color: var(--amber); }
+.tag.diff-easy { background: var(--green-pale); color: var(--green-dark); }
+.tag.diff-med { background: var(--amber-pale); color: var(--amber); }
+.tag.diff-hard { background: var(--coral-pale); color: var(--coral); }
+
+.nav-bar { padding: 10px 16px calc(10px + var(--safe-bot)); border-top: 0.5px solid var(--border); background: var(--surface); flex-shrink: 0; display: flex; gap: 10px; }
+.nav-bar button { flex: 1; padding: 14px; border-radius: var(--radius); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; border: none; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.nav-bar button:active { transform: scale(0.98); }
+.btn-primary { background: var(--green); color: white; box-shadow: 0 2px 10px rgba(29,158,117,0.25); }
+.btn-primary:disabled { background: var(--gray-200); color: var(--text-3); box-shadow: none; cursor: default; transform: none !important; }
+.btn-secondary { background: var(--surface-2); color: var(--text-2); border: 0.5px solid var(--border-md) !important; }
+
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 40px 24px; text-align: center; }
+.empty-icon { font-size: 48px; }
+.empty-title { font-size: 15px; font-weight: 500; color: var(--text-2); }
+.empty-sub { font-size: 13px; color: var(--text-3); line-height: 1.5; }
+
+/* ── Detail screen ── */
+.detail-map-wrap { margin: 12px 16px; height: 200px; border-radius: var(--radius); overflow: hidden; position: relative; background: var(--green-pale); border: 0.5px solid var(--green-light); }
+.detail-map-wrap canvas { width: 100%; height: 100%; }
+.map-actions { position: absolute; bottom: 10px; right: 10px; display: flex; gap: 7px; }
+.map-action-btn { background: var(--surface); border: 0.5px solid var(--border-md); border-radius: 20px; padding: 7px 12px; font-size: 12px; font-weight: 500; font-family: var(--font); cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--text-2); transition: all 0.15s; }
+.map-action-btn.primary { background: var(--green); color: white; border-color: var(--green); }
+.map-action-btn:active { transform: scale(0.96); }
+
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 16px 12px; }
+.stat-card { background: var(--surface-2); border-radius: var(--radius-sm); padding: 13px 14px; }
+.stat-card .sl { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 5px; }
+.stat-card .sv { font-size: 22px; font-weight: 300; color: var(--text); font-family: var(--mono); }
+.stat-card .su { font-size: 12px; color: var(--text-3); }
+
+.wp-section { margin: 0 16px 12px; }
+.wp-title { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+.wp-item { display: flex; gap: 12px; padding: 0 0 16px; position: relative; }
+.wp-spine { display: flex; flex-direction: column; align-items: center; width: 18px; flex-shrink: 0; margin-top: 3px; }
+.wp-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.wp-dot.start { background: var(--blue); }
+.wp-dot.mid { background: var(--green); border: 2px solid var(--green-pale); }
+.wp-dot.end { background: var(--coral); }
+.wp-connector { width: 2px; flex: 1; background: var(--green-light); margin: 3px 0; min-height: 14px; border-radius: 1px; }
+.wp-content { flex: 1; }
+.wp-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.wp-detail { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+.osm-hint { margin: 0 16px 4px; background: var(--surface-2); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px 13px; display: flex; gap: 10px; align-items: flex-start; }
+.osm-hint .hint-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.osm-hint .hint-text { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.osm-hint .hint-text strong { color: var(--text); font-weight: 500; }
+
+.apps-row { margin: 10px 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.app-link { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface-2); border: 0.5px solid var(--border-md); border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; color: var(--text-2); cursor: pointer; text-decoration: none; transition: all 0.15s; }
+.app-link:active { background: var(--gray-100); }
+.app-link span { font-size: 16px; }
+
+/* ── Toast ── */
+.toast { position: fixed; bottom: calc(80px + var(--safe-bot)); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--gray-900); color: var(--surface); padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 500; opacity: 0; transition: all 0.28s; pointer-events: none; white-space: nowrap; z-index: 1000; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Install banner ── */
+.install-banner { margin: 10px 16px 0; padding: 12px 14px; background: var(--blue-pale); border: 0.5px solid var(--blue); border-radius: var(--radius-sm); display: none; align-items: center; gap: 10px; }
+.install-banner.visible { display: flex; }
+.ib-text { flex: 1; font-size: 12px; color: var(--blue); line-height: 1.4; font-weight: 500; }
+.ib-btn { background: var(--blue); color: white; border: none; border-radius: var(--radius-sm); padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font); white-space: nowrap; }
+.ib-close { font-size: 18px; cursor: pointer; color: var(--blue); opacity: 0.6; flex-shrink: 0; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 0px; }
+
+/* Fade-in animation */
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+.fade-up { animation: fadeUp 0.3s ease both; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="status-bar"></div>
+
+  <div class="topbar">
+    <div class="topbar-logo">
+      <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="4" cy="14" r="2.5" fill="white"/>
+        <circle cx="16" cy="6" r="2.5" fill="white" opacity="0.7"/>
+        <circle cx="10" cy="17" r="2" fill="white" opacity="0.5"/>
+        <polyline points="4,14 8,8 13,11 16,6" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div>
+      <div class="topbar-title">TrailPlan</div>
+      <div class="topbar-sub">Planer tras</div>
+    </div>
+    <div class="gps-pill searching" id="gps-pill" onclick="refreshGPS()">
+      <div class="gps-dot pulse" id="gps-dot"></div>
+      <span id="gps-label">GPS…</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════ SETUP SCREEN ══════════════════════════════════ -->
+  <div class="screen active" id="screen-setup">
+    <div class="install-banner" id="install-banner">
+      <div class="ib-text">📲 Zainstaluj TrailPlan na ekranie głównym, aby używać offline</div>
+      <button class="ib-btn" id="install-btn">Zainstaluj</button>
+      <span class="ib-close" onclick="dismissInstall()">✕</span>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Aktywność</div>
+      <div class="mode-grid">
+        <div class="mode-card selected" data-mode="bike" onclick="selectMode('bike',this)">
+          <span class="mode-icon">🚴</span>
+          <div class="mode-name">Rower</div>
+          <div class="mode-hint">Ścieżki rowerowe, drogi leśne</div>
+        </div>
+        <div class="mode-card" data-mode="hike" onclick="selectMode('hike',this)">
+          <span class="mode-icon">🥾</span>
+          <div class="mode-name">Pieszo</div>
+          <div class="mode-hint">Szlaki, parki, promenady</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Planowany dystans</div>
+      <div class="dist-row">
+        <div class="dist-display">
+          <div class="dist-val" id="dist-val">20</div>
+          <div class="dist-unit">km</div>
+        </div>
+        <input type="range" class="dist-slider" id="dist-slider" min="2" max="150" value="20" step="1"
+          oninput="updateDist(this.value)" style="flex:1">
+      </div>
+      <div class="presets" id="presets">
+        <button class="preset" onclick="setPreset(5)">5 km</button>
+        <button class="preset" onclick="setPreset(10)">10 km</button>
+        <button class="preset active" onclick="setPreset(20)">20 km</button>
+        <button class="preset" onclick="setPreset(30)">30 km</button>
+        <button class="preset" onclick="setPreset(50)">50 km</button>
+        <button class="preset" onclick="setPreset(100)">100 km</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Opcje</div>
+      <div class="toggle-row">
+        <div class="toggle-text">
+          <div class="label">Trasa okrężna</div>
+          <div class="sub">Powrót do miejsca startu. Wyłącz, aby trasa mogła zakończyć się w innym miejscu (może wydłużyć dystans).</div>
+        </div>
+        <div class="toggle on" id="loop-toggle" onclick="toggleLoop()" role="switch" aria-checked="true" tabindex="0" onkeydown="if(event.key===' ')toggleLoop()"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Twoja lokalizacja</div>
+      <div class="loc-box">
+        <div class="loc-pin">📍</div>
+        <div class="loc-info">
+          <div class="loc-name" id="loc-name">Pobieranie…</div>
+          <div class="loc-coords" id="loc-coords">—</div>
+        </div>
+        <div class="loc-refresh" onclick="refreshGPS()" id="refresh-btn">🔄</div>
+      </div>
+    </div>
+
+    <button class="gen-btn" id="gen-btn" onclick="generateRoutes()">
+      <span id="gen-btn-icon">🗺️</span>
+      <span id="gen-btn-label">Zaproponuj trasy</span>
+    </button>
+    <div style="height:8px"></div>
+  </div>
+
+  <!-- ══════════════════════════════════ ROUTES SCREEN ══════════════════════════════════ -->
+  <div class="screen" id="screen-routes" style="padding-bottom:0">
+    <div class="screen-header">
+      <div class="back" onclick="showScreen('setup')">←</div>
+      <div>
+        <div class="sh-title" id="routes-title">Propozycje tras</div>
+        <div class="sh-sub" id="routes-sub">wybierz wariant</div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(80px + var(--safe-bot))">
+      <div class="map-preview" onclick="openOSM()">
+        <canvas id="preview-canvas"></canvas>
+        <div class="map-overlay" id="map-overlay">
+          <div class="map-icon">🗺️</div>
+          <div class="map-label">Otwórz w OpenStreetMap</div>
+        </div>
+      </div>
+      <div class="routes-list" id="routes-list">
+        <div class="empty-state">
+          <div class="empty-icon">⏳</div>
+          <div class="empty-title">Generuję propozycje…</div>
+          <div class="empty-sub">AI analizuje mapy w Twojej okolicy i szuka optymalnych tras</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-bar">
+      <button class="btn-secondary" onclick="regenerate()" style="max-width:120px; font-size:13px">🔄 Nowe</button>
+      <button class="btn-primary" id="nav-btn" disabled onclick="goToDetail()">🧭 Wybierz trasę</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════ DETAIL SCREEN ══════════════════════════════════ -->
+  <div class="screen" id="screen-detail" style="padding-bottom:0">
+    <div class="screen-header">
+      <div class="back" onclick="showScreen('routes')">←</div>
+      <div>
+        <div class="sh-title" id="detail-title">Szczegóły trasy</div>
+        <div class="sh-sub" id="detail-sub"></div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(90px + var(--safe-bot))">
+      <div class="detail-map-wrap">
+        <canvas id="detail-canvas"></canvas>
+        <div class="map-actions">
+          <div class="map-action-btn" onclick="openOSMAnd()">🗺️ OsmAnd</div>
+          <div class="map-action-btn primary" onclick="openNavigation()">🧭 Nawiguj</div>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="detail-stats"></div>
+
+      <div class="wp-section" id="waypoints"></div>
+
+      <div class="osm-hint" id="osm-hint">
+        <div class="hint-icon">💡</div>
+        <div class="hint-text" id="osm-hint-text">Otwórz trasę w aplikacji nawigacyjnej</div>
+      </div>
+
+      <div class="apps-row">
+        <a class="app-link" onclick="openOSM()"><span>🌍</span> OpenStreetMap</a>
+        <a class="app-link" onclick="openOSMAnd()"><span>📱</span> OsmAnd</a>
+        <a class="app-link" onclick="openGoogleMaps()"><span>🗺️</span> Google Maps</a>
+        <a class="app-link" onclick="openOrganicMaps()"><span>🍃</span> Organic Maps</a>
+      </div>
+
+      <div style="height:8px"></div>
+    </div>
+
+    <div class="nav-bar">
+      <button class="btn-secondary" onclick="shareRoute()" style="max-width:110px;font-size:13px">📤 Udostępnij</button>
+      <button class="btn-primary" onclick="openNavigation()">🧭 Nawiguj teraz</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const S = {
+  mode: 'bike',
+  dist: 20,
+  loop: true,
+  lat: 52.2297,
+  lng: 21.0122,
+  locName: 'Warszawa',
+  locDetail: '',
+  routes: [],
+  selected: null,
+  gpsOk: false
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
+
+function toast(msg, dur=2400) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), dur);
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $('screen-' + name).classList.add('active');
+  window.scrollTo(0,0);
+}
+
+// ── GPS ───────────────────────────────────────────────────────────────────
+function setGPSStatus(state) {
+  const pill = $('gps-pill'), dot = $('gps-dot'), label = $('gps-label');
+  pill.className = 'gps-pill ' + state;
+  dot.className = 'gps-dot' + (state === 'searching' ? ' pulse' : '');
+  label.textContent = state === 'ok' ? 'GPS ✓' : state === 'error' ? 'Brak GPS' : 'GPS…';
+}
+
+async function reverseGeocode(lat, lng) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=pl`);
+    const d = await r.json();
+    const a = d.address || {};
+    const city = a.city || a.town || a.village || a.municipality || 'Twoja lokalizacja';
+    const road = a.road || a.pedestrian || '';
+    const suburb = a.suburb || a.neighbourhood || '';
+    S.locName = city;
+    S.locDetail = road || suburb;
+    $('loc-name').textContent = road ? `${road}${suburb ? ', ' + suburb : ''}` : city;
+    $('loc-coords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)} · ${city}`;
+  } catch(e) {
+    $('loc-name').textContent = `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
+    $('loc-coords').textContent = 'Lokalizacja GPS';
+  }
+}
+
+function refreshGPS() {
+  if (!navigator.geolocation) {
+    setGPSStatus('error');
+    $('loc-name').textContent = 'GPS niedostępny';
+    return;
+  }
+  setGPSStatus('searching');
+  $('loc-name').textContent = 'Pobieranie lokalizacji…';
+  $('loc-coords').textContent = '—';
+  $('refresh-btn').style.transform = 'rotate(360deg)';
+  setTimeout(() => $('refresh-btn').style.transform = '', 400);
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    S.lat = pos.coords.latitude;
+    S.lng = pos.coords.longitude;
+    S.gpsOk = true;
+    setGPSStatus('ok');
+    reverseGeocode(S.lat, S.lng);
+  }, err => {
+    setGPSStatus('error');
+    $('loc-name').textContent = 'Warszawa (domyślna)';
+    $('loc-coords').textContent = '52.22970, 21.01220';
+    toast('Brak dostępu do GPS. Używam Warszawy jako lokalizacji.');
+  }, { timeout: 10000, maximumAge: 60000, enableHighAccuracy: true });
+}
+
+// ── UI controls ───────────────────────────────────────────────────────────
+function selectMode(mode, el) {
+  S.mode = mode;
+  document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function updateDist(v) {
+  S.dist = parseInt(v);
+  $('dist-val').textContent = v;
+  document.querySelectorAll('.preset').forEach(b => {
+    b.classList.toggle('active', parseInt(b.textContent) === S.dist);
+  });
+}
+
+function setPreset(v) {
+  S.dist = v;
+  $('dist-slider').value = v;
+  updateDist(v);
+}
+
+function toggleLoop() {
+  S.loop = !S.loop;
+  const t = $('loop-toggle');
+  t.classList.toggle('on', S.loop);
+  t.setAttribute('aria-checked', S.loop);
+}
+
+// ── Route generation ──────────────────────────────────────────────────────
+async function generateRoutes() {
+  const btn = $('gen-btn');
+  btn.disabled = true;
+  $('gen-btn-icon').textContent = '';
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  btn.insertBefore(spinner, btn.firstChild);
+  $('gen-btn-label').textContent = 'Szukam tras…';
+
+  showScreen('routes');
+  $('routes-title').textContent = `Trasy ${S.mode==='bike'?'rowerowe':'piesze'} ~${S.dist} km`;
+  $('routes-sub').textContent = `w okolicy: ${S.locDetail || S.locName}`;
+  $('routes-list').innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Analizuję mapy…</div><div class="empty-sub">AI szuka tras unikając autostrad, dróg ekspresowych i niebezpiecznych odcinków</div></div>`;
+  $('nav-btn').disabled = true;
+
+  const modeCtx = S.mode === 'bike'
+    ? 'rowerową. Preferuj: wyznaczone ścieżki rowerowe (OSM highway=cycleway), drogi rowerowe (bicycle=designated), drogi leśne, parki, trasy EuroVelo. BEZWZGLĘDNIE UNIKAJ: autostrad (motorway), dróg ekspresowych (trunk), dróg krajowych bez wydzielonej ścieżki rowerowej, ulic z gęstym ruchem bez infrastruktury rowerowej.'
+    : 'pieszą. Preferuj: oznakowane szlaki turystyczne, chodniki, promenady, parki, lasy, ścieżki spacerowe. BEZWZGLĘDNIE UNIKAJ: autostrad, dróg ekspresowych, dróg głównych bez chodnika, ulic o wysokim natężeniu ruchu.';
+  const loopCtx = S.loop ? 'OKRĘŻNA – trasa musi wrócić do punktu startowego.' : 'LINIOWA – trasa może zakończyć się w innym miejscu niż start (co może wydłużyć trasę).';
+
+  const prompt = `Jesteś ekspertem planowania tras ${S.mode==='bike'?'rowerowych':'pieszych'} w Polsce. Zaplanuj 3 różne warianty trasy ${modeCtx}
+
+Parametry:
+- Przybliżony dystans: ${S.dist} km (±15% akceptowalnie)
+- Lokalizacja startowa: ${S.locName}${S.locDetail ? ', '+S.locDetail : ''} (GPS: ${S.lat.toFixed(4)}, ${S.lng.toFixed(4)})
+- Rodzaj trasy: ${loopCtx}
+
+Podaj REALNE miejsca, parki, ulice, szlaki i trasy istniejące w tej okolicy.
+
+Odpowiedz WYŁĄCZNIE jako JSON (zero markdown, zero objaśnień, zero backtick):
+{"routes":[{"id":"A","name":"<kreatywna nazwa>","dist_km":<liczba>,"duration_min":<szacowany czas>,"elevation_m":<łączne przewyższenie>,"desc":"<2-3 zdania opisu z konkretnymi miejscami>","waypoints":["<punkt startowy>","<punkt 2>","<punkt 3>","<punkt 4>","<meta lub 'Powrót do startu'>"],"tags":["<tag1>","<tag2>","<tag3>"],"surface":"<typ nawierzchni>","difficulty":"łatwa|średnia|trudna","osm_query":"<zapytanie do OpenStreetMap np. nazwa szlaku lub trasy>"}]}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1200,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await res.json();
+    const text = data.content.map(b => b.text || '').join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    S.routes = parsed.routes;
+    S.selected = null;
+    renderRoutes();
+    drawPreviewMap();
+  } catch(err) {
+    $('routes-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Błąd generowania</div><div class="empty-sub">Sprawdź połączenie z internetem i spróbuj ponownie.<br><br><small>${err.message}</small></div></div>`;
+  }
+
+  btn.disabled = false;
+  spinner.remove();
+  $('gen-btn-icon').textContent = '🗺️';
+  $('gen-btn-label').textContent = 'Zaproponuj trasy';
+}
+
+function regenerate() {
+  S.selected = null;
+  generateRoutes();
+}
+
+const diffClass = { 'łatwa': 'diff-easy', 'średnia': 'diff-med', 'trudna': 'diff-hard' };
+const badgeC = ['badge-a', 'badge-b', 'badge-c'];
+const letters = ['A','B','C'];
+
+function renderRoutes() {
+  const list = $('routes-list');
+  list.innerHTML = '';
+  S.routes.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.className = 'route-card fade-up';
+    div.style.animationDelay = (i * 0.08) + 's';
+    div.id = 'rc-' + r.id;
+    const tags = (r.tags||[]).map(t => `<span class="tag">${t}</span>`).join('');
+    const dc = diffClass[r.difficulty] || 'diff-easy';
+    div.innerHTML = `
+      <div class="rc-head">
+        <div class="rc-badge ${badgeC[i]}">${letters[i]}</div>
+        <div class="rc-info">
+          <div class="rc-name">${r.name}</div>
+          <div class="rc-desc">${r.desc}</div>
+        </div>
+      </div>
+      <div class="rc-stats">
+        <div class="rc-stat"><div class="sv">${r.dist_km}</div><div class="sl">km</div></div>
+        <div class="rc-stat"><div class="sv">${Math.round(r.duration_min/5)*5}</div><div class="sl">min</div></div>
+        <div class="rc-stat"><div class="sv">${r.elevation_m}</div><div class="sl">m ↑</div></div>
+      </div>
+      <div class="rc-tags">${tags}<span class="tag ${dc}">${r.difficulty}</span></div>
+    `;
+    div.onclick = () => selectRoute(r.id);
+    list.appendChild(div);
+  });
+}
+
+function selectRoute(id) {
+  S.selected = S.routes.find(r => r.id === id);
+  document.querySelectorAll('.route-card').forEach(c => c.classList.remove('selected'));
+  $('rc-' + id).classList.add('selected');
+  $('nav-btn').disabled = false;
+  toast(`Wybrano: ${S.selected.name}`);
+}
+
+function goToDetail() {
+  if (!S.selected) return;
+  showScreen('detail');
+  renderDetail(S.selected);
+}
+
+// ── Detail rendering ──────────────────────────────────────────────────────
+function renderDetail(r) {
+  $('detail-title').textContent = r.name;
+  $('detail-sub').textContent = `${r.dist_km} km · ${S.mode==='bike'?'🚴':'🥾'} · ${r.difficulty}`;
+
+  $('detail-stats').innerHTML = `
+    <div class="stat-card"><div class="sl">Dystans</div><div class="sv">${r.dist_km}<span class="su"> km</span></div></div>
+    <div class="stat-card"><div class="sl">Czas</div><div class="sv">${Math.round(r.duration_min/5)*5}<span class="su"> min</span></div></div>
+    <div class="stat-card"><div class="sl">Przewyższenie</div><div class="sv">${r.elevation_m}<span class="su"> m</span></div></div>
+    <div class="stat-card"><div class="sl">Nawierzchnia</div><div class="sv" style="font-size:14px;padding-top:6px">${r.surface}</div></div>
+  `;
+
+  const wpSection = $('waypoints');
+  wpSection.innerHTML = '<div class="wp-title">Punkty trasy</div>';
+  const wps = r.waypoints || [];
+  wps.forEach((wp, i) => {
+    const isFirst = i === 0;
+    const isLast = i === wps.length - 1;
+    const dotClass = isFirst ? 'start' : isLast ? 'end' : 'mid';
+    const label = isFirst ? '▶ Start' : isLast ? (S.loop ? '⭕ Meta = Start' : '🏁 Meta') : `· Punkt ${i+1}`;
+    const connector = !isLast ? '<div class="wp-connector"></div>' : '';
+    wpSection.innerHTML += `<div class="wp-item"><div class="wp-spine"><div class="wp-dot ${dotClass}"></div>${connector}</div><div class="wp-content"><div class="wp-name">${wp}</div><div class="wp-detail">${label}</div></div></div>`;
+  });
+
+  $('osm-hint-text').innerHTML = r.osm_query
+    ? `<strong>Wskazówka nawigacyjna:</strong> Szukaj w mapach: <em>"${r.osm_query}"</em>. Zalecane aplikacje: OsmAnd, Organic Maps (bezpłatne, offline).`
+    : `Otwórz trasę w aplikacji nawigacyjnej. Zalecane: <strong>OsmAnd</strong> lub <strong>Organic Maps</strong> – bezpłatne, działają offline.`;
+
+  drawDetailMap(r);
+}
+
+// ── Canvas route sketches ─────────────────────────────────────────────────
+function makePts(n, w, h, loop, seed) {
+  const pts = [];
+  const cx = w/2, cy = h/2;
+  const rx = w*0.38, ry = h*0.38;
+  const rnd = (s,a) => { let x = Math.sin(s+a)*10000; return (x - Math.floor(x)) - 0.5; };
+  for (let i=0; i<n; i++) {
+    const a = Math.PI*2*(i/n) - Math.PI/2;
+    pts.push({ x: Math.round(cx + Math.cos(a)*rx*(0.7 + rnd(seed,i)*0.5) + rnd(seed,i+10)*22),
+               y: Math.round(cy + Math.sin(a)*ry*(0.7 + rnd(seed,i+5)*0.5) + rnd(seed,i+20)*18) });
+  }
+  if (loop) pts.push({...pts[0]});
+  return pts;
+}
+
+function drawRouteOnCanvas(canvas, route, index) {
+  if (!canvas) return;
+  const w = canvas.offsetWidth || 358, h = canvas.offsetHeight || 200;
+  canvas.width = w * window.devicePixelRatio;
+  canvas.height = h * window.devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  ctx.clearRect(0,0,w,h);
+
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const lineColor = isDark ? '#3DC99A' : '#1D9E75';
+  const dotColor  = isDark ? '#3DC99A' : '#1D9E75';
+  const startCol  = isDark ? '#60AAEE' : '#378ADD';
+  const endCol    = isDark ? '#EE7755' : '#D85A30';
+  const bg        = isDark ? '#0a2e22' : '#E1F5EE';
+
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,w,h);
+
+  // Grid
+  ctx.strokeStyle = isDark ? 'rgba(61,201,154,0.1)' : 'rgba(15,110,86,0.08)';
+  ctx.lineWidth = 0.5;
+  for(let x=0; x<w; x+=25){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for(let y=0; y<h; y+=25){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+
+  const n = (route.waypoints||[]).length || 5;
+  const pts = makePts(n, w, h, S.loop, index * 100 + 7);
+
+  // Shadow line
+  ctx.shadowColor = isDark ? 'rgba(61,201,154,0.3)' : 'rgba(29,158,117,0.2)';
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i=1; i<pts.length; i++) {
+    const xc = (pts[i-1].x + pts[i].x)/2;
+    const yc = (pts[i-1].y + pts[i].y)/2;
+    ctx.quadraticCurveTo(pts[i-1].x, pts[i-1].y, xc, yc);
+  }
+  ctx.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Dots
+  pts.forEach((p, i) => {
+    const isFirst = i === 0;
+    const isLast  = i === pts.length - 1;
+    const r = isFirst || isLast ? 7 : 4;
+    const fill = isFirst ? startCol : isLast ? endCol : dotColor;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = bg;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
+function drawPreviewMap() {
+  const canvas = $('preview-canvas');
+  if (!canvas || !S.routes.length) return;
+  const r = S.routes[0];
+  canvas.style.width = '100%'; canvas.style.height = '100%';
+  drawRouteOnCanvas(canvas, r, 0);
+  $('map-overlay').style.display = 'none';
+}
+
+function drawDetailMap(r) {
+  const canvas = $('detail-canvas');
+  if (!canvas) return;
+  canvas.style.width = '100%'; canvas.style.height = '100%';
+  const idx = S.routes.indexOf(r);
+  drawRouteOnCanvas(canvas, r, idx);
+}
+
+// ── Navigation & external apps ────────────────────────────────────────────
+function openNavigation() {
+  const r = S.selected;
+  if (!r) return;
+  const wp = (r.waypoints || [])[1] || '';
+  const dest = wp ? encodeURIComponent(wp + ' ' + S.locName) : encodeURIComponent(S.locName);
+  // Try to open system navigation
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isIOS     = /iphone|ipad/i.test(navigator.userAgent);
+  if (isAndroid) {
+    window.open(`geo:${S.lat},${S.lng}?q=${S.lat},${S.lng}(${encodeURIComponent(r.name)})`, '_blank');
+  } else if (isIOS) {
+    window.open(`maps://?saddr=${S.lat},${S.lng}&daddr=${dest}`, '_blank');
+  } else {
+    openOSM();
+  }
+}
+
+function openOSM() {
+  const q = S.selected ? encodeURIComponent(S.selected.osm_query || S.selected.name + ' ' + S.locName) : '';
+  const zoom = S.dist > 50 ? 11 : S.dist > 20 ? 12 : 13;
+  if (q) {
+    window.open(`https://www.openstreetmap.org/search?query=${q}#map=${zoom}/${S.lat}/${S.lng}`, '_blank');
+  } else {
+    window.open(`https://www.openstreetmap.org/#map=${zoom}/${S.lat}/${S.lng}`, '_blank');
+  }
+}
+
+function openOSMAnd() {
+  const r = S.selected;
+  if (!r) { toast('Najpierw wybierz trasę'); return; }
+  // OsmAnd deep link
+  window.open(`osmand.net://map?lat=${S.lat}&lon=${S.lng}&z=13`, '_blank');
+  setTimeout(() => {
+    // Fallback to web
+    window.open(`https://osmand.net/map#${S.lat}/${S.lng}/13`, '_blank');
+  }, 1200);
+}
+
+function openGoogleMaps() {
+  const r = S.selected;
+  const q = r ? encodeURIComponent(r.name + ' ' + S.locName) : encodeURIComponent(S.locName);
+  const travelMode = S.mode === 'bike' ? 'b' : 'w';
+  window.open(`https://www.google.com/maps/dir/?api=1&origin=${S.lat},${S.lng}&travelmode=${travelMode === 'b' ? 'bicycling' : 'walking'}`, '_blank');
+}
+
+function openOrganicMaps() {
+  const r = S.selected;
+  window.open(`om://map?v=1&ll=${S.lat},${S.lng}&n=${encodeURIComponent(r ? r.name : S.locName)}`, '_blank');
+  setTimeout(() => openOSM(), 1200);
+}
+
+async function shareRoute() {
+  const r = S.selected;
+  if (!r) return;
+  const text = `🗺️ ${r.name}\n📏 ${r.dist_km} km · ⏱️ ~${Math.round(r.duration_min/5)*5} min · ↑${r.elevation_m}m\n📍 ${S.locName}\n\nWygenerowano w TrailPlan`;
+  if (navigator.share) {
+    try { await navigator.share({ title: r.name, text }); } catch(e) {}
+  } else {
+    await navigator.clipboard.writeText(text).catch(()=>{});
+    toast('Skopiowano do schowka!');
+  }
+}
+
+// ── PWA install ───────────────────────────────────────────────────────────
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  $('install-banner').classList.add('visible');
+});
+
+$('install-btn').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') toast('TrailPlan zainstalowany! 🎉');
+  deferredPrompt = null;
+  dismissInstall();
+});
+
+function dismissInstall() {
+  $('install-banner').classList.remove('visible');
+}
+
+window.addEventListener('appinstalled', () => toast('Zainstalowano pomyślnie! ✅'));
+
+// ── Service Worker ────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));
+  });
+}
+
+// ── URL params (shortcuts) ────────────────────────────────────────────────
+const urlMode = new URLSearchParams(location.search).get('mode');
+if (urlMode === 'hike') {
+  selectMode('hike', document.querySelector('[data-mode="hike"]'));
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+refreshGPS();
+
+// Redraw on dark mode change
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (S.selected) drawDetailMap(S.selected);
+  if (S.routes.length) drawPreviewMap();
+});
+</script>
+</body>
+</html>
