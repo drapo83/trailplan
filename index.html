@@ -133,6 +133,7 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 .brow{display:flex;gap:8px}
 .bo{flex:1;padding:12px;border-radius:var(--r);font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;border:1px solid var(--border-md);background:var(--surface-2);color:var(--text-2);display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s}
 .bo:active{background:var(--gray-100)}
+.tile-btn.act{background:var(--green);color:white;border-color:var(--green)}
 .bp{flex:2;padding:12px;border-radius:var(--r);font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;border:none;background:var(--green);color:white;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;box-shadow:0 2px 10px rgba(29,158,117,.25)}
 .bp:active{transform:scale(.98);background:var(--green-dark)}
 
@@ -272,7 +273,12 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
     <div class="map-header">
       <div class="back" onclick="showSetup()">←</div>
       <div class="mhi"><div class="mht" id="mht">Trasy</div><div class="mhs" id="mhs">wybierz wariant</div></div>
-      <div class="bo" style="flex:none;padding:7px 11px;font-size:12px;border-radius:var(--r)" onclick="shareRoute()">📤</div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <div class="tile-btn bo" data-tile="google" style="flex:none;padding:5px 8px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapR,'google')">G</div>
+        <div class="tile-btn bo" data-tile="satellite" style="flex:none;padding:5px 8px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapR,'satellite')">🛰</div>
+        <div class="tile-btn bo" data-tile="osm" style="flex:none;padding:5px 8px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapR,'osm')">OSM</div>
+        <div class="bo" style="flex:none;padding:5px 8px;font-size:12px;border-radius:var(--rsm)" onclick="shareRoute()">📤</div>
+      </div>
     </div>
     <div class="rtabs" id="rtabs"></div>
     <div id="map-routes"></div>
@@ -292,6 +298,11 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
         <div class="nav-status">
           <div class="ns-label">Trasa aktywna</div>
           <div class="ns-val" id="nav-route-name">—</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <div class="tile-btn bo" data-tile="google" style="flex:none;padding:5px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'google')">G</div>
+          <div class="tile-btn bo" data-tile="satellite" style="flex:none;padding:5px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'satellite')">🛰</div>
+          <div class="tile-btn bo" data-tile="osm" style="flex:none;padding:5px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'osm')">OSM</div>
         </div>
         <button class="stop-btn" onclick="stopNav()">⏹ Zakończ</button>
       </div>
@@ -485,9 +496,14 @@ async function generate() {
     }
     if(!routes.length) throw new Error('Brak trasy. Sprawdź połączenie.');
     stepDone(3); S.routes=routes; S.activeIdx=0;
-    await dl(200); renderRoutes(); stepDone(4); await dl(400);
+    await dl(200);
+    // Hide loading first, then renderRoutes shows screen and inits map
+    $('loading').classList.remove('on');
+    renderRoutes();
+    stepDone(4); await dl(100);
   } catch(err) {
-    $('loading').classList.remove('on'); showSetup();
+    $('loading').classList.remove('on');
+    showSetup();
     toast('Błąd: '+err.message);
   }
   $('loading').classList.remove('on');
@@ -497,36 +513,102 @@ async function generate() {
 function stepDone(n){ const e=$('ls'+n); if(e){e.classList.add('done');e.classList.remove('cur');} const nx=$('ls'+(n+1)); if(nx)nx.classList.add('cur'); }
 function dl(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
+// ── Tile layers ───────────────────────────────────────────────────────────
+const TILES = {
+  osm: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  },
+  google: {
+    url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    attr: '© Google Maps',
+    maxZoom: 20
+  },
+  satellite: {
+    url: 'https://mt1.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',
+    attr: '© Google Satellite',
+    maxZoom: 20
+  }
+};
+let currentTile = 'google'; // default to Google – best mobile coverage
+
+function makeTileLayer(key) {
+  const t = TILES[key];
+  return L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.maxZoom });
+}
+
+function switchTile(map, key) {
+  currentTile = key;
+  if (!map) return;
+  map.eachLayer(l => { if (l instanceof L.TileLayer) map.removeLayer(l); });
+  makeTileLayer(key).addTo(map);
+  // Update buttons
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === key));
+}
+
 // ── Routes map ────────────────────────────────────────────────────────────
 function initMapRoutes() {
-  if(S.mapR) return;
-  S.mapR=L.map('map-routes',{zoomControl:true,attributionControl:true}).setView([S.lat,S.lng],13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(S.mapR);
-  setTimeout(()=>S.mapR.invalidateSize(),150);
+  if (S.mapR) {
+    // Already exists — just invalidate size and re-render
+    requestAnimationFrame(() => {
+      S.mapR.invalidateSize();
+      drawRouteLayers();
+    });
+    return;
+  }
+  S.mapR = L.map('map-routes', { zoomControl: true, attributionControl: true })
+             .setView([S.lat, S.lng], 13);
+  makeTileLayer(currentTile).addTo(S.mapR);
+
+  // Wait for the container to be fully painted before invalidating
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      S.mapR.invalidateSize();
+      drawRouteLayers();
+    });
+  });
 }
 
 function renderRoutes() {
-  if(!S.mapR) return;
-  S.layersR.forEach(l=>S.mapR.removeLayer(l)); S.layersR=[];
+  // Show screen first so container has real dimensions
+  showScreen('scr-routes');
+  renderTabs(); updateStats();
+  $('mht').textContent = `${S.mode==='bike'?'Trasy rowerowe':'Szlaki piesze'} ~${S.dist} km`;
+  $('mhs').textContent = `${S.locName} · ${S.routes.length} wariant${S.routes.length===1?'':'y'}`;
+  // Mark active tile btn
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
+  // Delay map init until after paint
+  setTimeout(() => initMapRoutes(), 80);
+}
 
-  S.routes.forEach((route,i)=>{
-    const act=i===S.activeIdx;
-    const line=L.polyline(route.coords,{color:route.color,weight:act?5:3,opacity:act?.9:.3,lineCap:'round',lineJoin:'round'}).addTo(S.mapR);
+function drawRouteLayers() {
+  if (!S.mapR) return;
+  S.layersR.forEach(l => S.mapR.removeLayer(l)); S.layersR = [];
+
+  // Draw all routes — inactive dimmed
+  S.routes.forEach((route, i) => {
+    const act = i === S.activeIdx;
+    const line = L.polyline(route.coords, {
+      color: route.color, weight: act ? 6 : 3,
+      opacity: act ? 1 : 0.3, lineCap: 'round', lineJoin: 'round'
+    }).addTo(S.mapR);
+    if (act) line.bringToFront();
     S.layersR.push(line);
   });
 
-  const active=S.routes[S.activeIdx];
-  if(active&&active.coords.length){
-    const si=L.divIcon({html:'<div style="width:14px;height:14px;border-radius:50%;background:#378ADD;border:2.5px solid white;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>',iconAnchor:[7,7],className:''});
-    const ei=L.divIcon({html:'<div style="width:14px;height:14px;border-radius:50%;background:#D85A30;border:2.5px solid white;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>',iconAnchor:[7,7],className:''});
-    const m1=L.marker(active.coords[0],{icon:si}).bindPopup('▶ Start').addTo(S.mapR);
-    S.layersR.push(m1);
-    if(!S.loop){const m2=L.marker(active.coords[active.coords.length-1],{icon:ei}).bindPopup('🏁 Meta').addTo(S.mapR); S.layersR.push(m2);}
-    S.mapR.fitBounds(L.polyline(active.coords).getBounds(),{padding:[30,30]});
+  const active = S.routes[S.activeIdx];
+  if (active && active.coords.length) {
+    const si = L.divIcon({ html: '<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>', iconAnchor:[8,8], className:'' });
+    const ei = L.divIcon({ html: '<div style="width:16px;height:16px;border-radius:50%;background:#D85A30;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>', iconAnchor:[8,8], className:'' });
+    S.layersR.push(L.marker(active.coords[0], {icon:si}).bindPopup('▶ Start').addTo(S.mapR));
+    S.layersR.push(L.marker(active.coords[active.coords.length-1], {icon:ei}).bindPopup('🏁 Meta').addTo(S.mapR));
+
+    const bounds = L.polyline(active.coords).getBounds();
+    S.mapR.fitBounds(bounds, { padding: [32, 32], animate: false });
+    // Second fitBounds after map is fully sized
+    setTimeout(() => { S.mapR.invalidateSize(); S.mapR.fitBounds(bounds, { padding: [32, 32] }); }, 300);
   }
-  renderTabs(); updateStats();
-  $('mht').textContent=`${S.mode==='bike'?'Trasy rowerowe':'Szlaki piesze'} ~${S.dist} km`;
-  $('mhs').textContent=`${S.locName} · ${S.routes.length} wariant${S.routes.length===1?'':'y'}`;
 }
 
 function renderTabs(){
@@ -540,7 +622,11 @@ function renderTabs(){
   });
 }
 
-function switchRoute(idx){ S.activeIdx=idx; renderRoutes(); }
+function switchRoute(idx){
+  S.activeIdx=idx;
+  renderTabs(); updateStats();
+  drawRouteLayers();
+}
 
 function updateStats(){
   const r=S.routes[S.activeIdx]; if(!r) return;
@@ -553,53 +639,56 @@ function updateStats(){
     <div class="sr"><div class="rv">~${kcal}</div><div class="rl">kcal</div></div>`;
 }
 
-// ── Navigation ────────────────────────────────────────────────────────────
+// ── Navigation map ────────────────────────────────────────────────────────
 function initMapNav() {
-  if(S.mapN) return;
-  S.mapN=L.map('map-nav',{zoomControl:false,attributionControl:false}).setView([S.lat,S.lng],15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(S.mapN);
-  L.control.attribution({position:'bottomright'}).addTo(S.mapN);
-  setTimeout(()=>S.mapN.invalidateSize(),150);
+  if (S.mapN) { requestAnimationFrame(() => S.mapN.invalidateSize()); return; }
+  S.mapN = L.map('map-nav', { zoomControl: false, attributionControl: true }).setView([S.lat, S.lng], 15);
+  makeTileLayer(currentTile).addTo(S.mapN);
+  requestAnimationFrame(() => requestAnimationFrame(() => S.mapN.invalidateSize()));
 }
 
 function startNav() {
-  const r=S.routes[S.activeIdx]; if(!r) return;
+  const r = S.routes[S.activeIdx]; if (!r) return;
   showScreen('scr-nav');
-  initMapNav();
 
-  // Draw route on nav map
-  S.layersN.forEach(l=>S.mapN.removeLayer(l)); S.layersN=[];
-  const line=L.polyline(r.coords,{color:r.color,weight:5,opacity:.9,lineCap:'round'}).addTo(S.mapN);
-  S.layersN.push(line);
+  // Init map after screen is visible
+  setTimeout(() => {
+    initMapNav();
 
-  // Start/end markers
-  const si=L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',iconAnchor:[8,8],className:''});
-  const ei=L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#D85A30;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',iconAnchor:[8,8],className:''});
-  S.layersN.push(L.marker(r.coords[0],{icon:si}).bindPopup('▶ Start').addTo(S.mapN));
-  S.layersN.push(L.marker(r.coords[r.coords.length-1],{icon:ei}).bindPopup('🏁 Meta').addTo(S.mapN));
-  S.mapN.fitBounds(line.getBounds(),{padding:[40,40]});
+    // Draw route on nav map after map is ready
+    setTimeout(() => {
+      S.layersN.forEach(l => S.mapN.removeLayer(l)); S.layersN = [];
 
-  $('nav-route-name').textContent=r.name+' · '+r.distKm+' km';
+      const line = L.polyline(r.coords, {color: r.color, weight: 6, opacity: 1, lineCap: 'round', lineJoin: 'round'}).addTo(S.mapN);
+      S.layersN.push(line);
 
-  // Init session
+      const si = L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',iconAnchor:[8,8],className:''});
+      const ei = L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#D85A30;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',iconAnchor:[8,8],className:''});
+      S.layersN.push(L.marker(r.coords[0], {icon:si}).bindPopup('▶ Start').addTo(S.mapN));
+      S.layersN.push(L.marker(r.coords[r.coords.length-1], {icon:ei}).bindPopup('🏁 Meta').addTo(S.mapN));
+
+      S.mapN.invalidateSize();
+      S.mapN.fitBounds(line.getBounds(), {padding: [40, 40]});
+      // Re-fit after full render
+      setTimeout(() => { S.mapN.invalidateSize(); S.mapN.fitBounds(line.getBounds(), {padding:[40,40]}); }, 400);
+    }, 120);
+  }, 80);
+
+  $('nav-route-name').textContent = r.name + ' · ' + r.distKm + ' km';
+  // highlight default tile btn
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
+
   S.nav = {
-    startTime: Date.now(),
-    dist: 0,
-    lastPos: null,
-    timer: null,
-    watchId: null,
-    speedHistory: [], // [{t, spd}]
-    maxSpd: 0,
-    kcalPerKm: S.mode==='bike'?35:65,
+    startTime: Date.now(), dist: 0, lastPos: null,
+    timer: null, watchId: null,
+    speedHistory: [], maxSpd: 0,
+    kcalPerKm: S.mode==='bike' ? 35 : 65,
     route: r
   };
 
-  // Position tracking
-  if(navigator.geolocation) {
-    S.nav.watchId = navigator.geolocation.watchPosition(onNavPos, ()=>{}, {enableHighAccuracy:true,maximumAge:2000});
+  if (navigator.geolocation) {
+    S.nav.watchId = navigator.geolocation.watchPosition(onNavPos, () => {}, {enableHighAccuracy: true, maximumAge: 2000});
   }
-
-  // Timer tick every second
   S.nav.timer = setInterval(navTick, 1000);
   navTick();
 }
