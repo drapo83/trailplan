@@ -429,27 +429,48 @@ function selVar(n,el){ S.variants=n; document.querySelectorAll('.vbtn').forEach(
 
 // ── Routing ───────────────────────────────────────────────────────────────
 async function fetchRoute(waypoints, profile) {
-  // Try GraphHopper demo
+  const vehicle = profile === 'bike' ? 'bike' : 'foot';
+
+  // ── GraphHopper demo (respects bike/foot paths, avoids motorways) ──
   try {
-    const vehicle=profile==='bike'?'bike':'foot';
-    const pts=waypoints.map(([la,ln])=>`point=${la},${ln}`).join('&');
-    const url=`https://graphhopper.com/api/1/route?${pts}&vehicle=${vehicle}&locale=pl&points_encoded=false&key=`;
-    const r=await fetch(url,{signal:AbortSignal.timeout(9000)});
-    if(r.ok){const d=await r.json(); if(d.paths&&d.paths.length){const p=d.paths[0]; return {coords:p.points.coordinates.map(([ln,la])=>[la,ln]),distKm:fx(p.distance/1000),durationMin:Math.round(p.time/60000)};}}
-  } catch(e){}
-  // Try OSRM
+    const pts = waypoints.map(([la,ln]) => `point=${la},${ln}`).join('&');
+    const avoid = profile === 'bike'
+      ? '&avoid=motorway&avoid=trunk&avoid=ferry'
+      : '&avoid=motorway&avoid=trunk&avoid=ferry';
+    const url = `https://graphhopper.com/api/1/route?${pts}&vehicle=${vehicle}&locale=pl&points_encoded=false&instructions=false${avoid}&key=`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.paths && d.paths.length) {
+        const p = d.paths[0];
+        return { coords: p.points.coordinates.map(([ln,la]) => [la,ln]), distKm: fx(p.distance/1000), durationMin: Math.round(p.time/60000) };
+      }
+      if (d.message) console.warn('GH:', d.message);
+    }
+  } catch(e) { console.warn('GH failed:', e.message); }
+
+  // ── OSRM public (fallback, good road snapping) ──
   try {
-    const op=profile==='bike'?'bike':'foot';
-    const coords=waypoints.map(([la,ln])=>`${ln},${la}`).join(';');
-    const url=`https://router.project-osrm.org/route/v1/${op}/${coords}?overview=full&geometries=geojson`;
-    const r=await fetch(url,{signal:AbortSignal.timeout(9000)});
-    if(r.ok){const d=await r.json(); if(d.routes&&d.routes.length){const rt=d.routes[0]; return {coords:rt.geometry.coordinates.map(([ln,la])=>[la,ln]),distKm:fx(rt.distance/1000),durationMin:Math.round(rt.duration/60)};}}
-  } catch(e){}
-  // Fallback straight-line
-  const coords=waypoints.map(([la,ln])=>[la,ln]);
-  let dist=0; for(let i=1;i<coords.length;i++) dist+=haversine(coords[i-1][0],coords[i-1][1],coords[i][0],coords[i][1]);
-  const spd=profile==='bike'?15:5;
-  return {coords,distKm:fx(dist),durationMin:Math.round(dist/spd*60),isFallback:true};
+    const op = profile === 'bike' ? 'bike' : 'foot';
+    const coords = waypoints.map(([la,ln]) => `${ln},${la}`).join(';');
+    const url = `https://router.project-osrm.org/route/v1/${op}/${coords}?overview=full&geometries=geojson&continue_straight=false`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.routes && d.routes.length) {
+        const rt = d.routes[0];
+        return { coords: rt.geometry.coordinates.map(([ln,la]) => [la,ln]), distKm: fx(rt.distance/1000), durationMin: Math.round(rt.duration/60) };
+      }
+    }
+  } catch(e) { console.warn('OSRM failed:', e.message); }
+
+  // ── Last resort: straight lines ──
+  const coords = waypoints.map(([la,ln]) => [la,ln]);
+  let dist = 0;
+  for (let i = 1; i < coords.length; i++)
+    dist += haversine(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1]);
+  const spd = profile === 'bike' ? 15 : 5;
+  return { coords, distKm: fx(dist), durationMin: Math.round(dist/spd*60), isFallback: true };
 }
 
 function haversine(la1,ln1,la2,ln2){
@@ -459,16 +480,43 @@ function haversine(la1,ln1,la2,ln2){
 }
 
 function buildWaypoints(idx, targetKm, lat, lng) {
-  const R=6371, r=(targetKm/(2*Math.PI))*0.75;
-  const n=targetKm<10?3:targetKm<30?4:5;
-  const base=(idx*2*Math.PI/5)+0.3;
-  const pts=[];
-  for(let i=0;i<n;i++){
-    const a=base+(2*Math.PI*i/n);
-    const rr=r*(0.65+(idx%2===0?0.1:-0.1)+(i%2)*0.25);
-    pts.push([lat+(rr/R)*(180/Math.PI)*Math.cos(a), lng+(rr/R)*(180/Math.PI)/Math.cos(lat*Math.PI/180)*Math.sin(a)]);
+  const R = 6371;
+
+  // For a loop: circumference ≈ targetKm, so radius ≈ targetKm/(2π)
+  // Add routing overhead factor ~1.35 (roads are longer than crow-fly)
+  const radiusKm = (targetKm / (2 * Math.PI)) / 1.35;
+
+  // Each variant rotates by a large prime angle so routes diverge significantly
+  // idx 0→N, 1→NE, 2→E, 3→SE, 4→SW (spread 72° apart)
+  const baseAngleDeg = idx * 72 + 15; // offset 15° so none goes straight N
+  const baseAngle = baseAngleDeg * Math.PI / 180;
+
+  // Number of via-points: more points = more unique road segments, fewer u-turns
+  const nVia = targetKm < 8 ? 3 : targetKm < 25 ? 4 : targetKm < 60 ? 5 : 6;
+
+  // Spread via-points around a slightly elliptical loop
+  // Vary the ellipse orientation per variant to ensure uniqueness
+  const ellipseRatio = 0.65 + (idx % 3) * 0.15; // 0.65 / 0.80 / 0.95
+  const pts = [];
+  for (let i = 0; i < nVia; i++) {
+    // Distribute evenly, starting from baseAngle, going clockwise
+    const a = baseAngle + (2 * Math.PI * i / nVia);
+    // Alternate inner/outer slightly to force different road segments
+    const rFactor = i % 2 === 0 ? 1.0 : ellipseRatio;
+    const rr = radiusKm * rFactor;
+    const dLat = (rr / R) * (180 / Math.PI) * Math.cos(a);
+    const dLng = (rr / R) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180) * Math.sin(a);
+    pts.push([lat + dLat, lng + dLng]);
   }
-  return [[lat,lng],...pts,[lat,lng]];
+
+  // Always start AND end at GPS position (true loop)
+  // For one-way (S.loop=false): just don't add the closing point
+  if (S.loop) {
+    return [[lat, lng], ...pts, [lat, lng]];
+  } else {
+    // One-way: end at the farthest point from start
+    return [[lat, lng], ...pts];
+  }
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────
@@ -688,16 +736,17 @@ function startNav() {
   document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
 
   S.nav = {
-    startTime: null,        // starts only on first GPS fix
+    startTime: null,
     dist: 0,
     lastPos: null,
     lastPosTime: null,
     lastSpd: 0,
+    movingSeconds: 0,       // time actually moving (for true avg speed)
+    lastMovingTick: null,   // timestamp of last moving tick
     timer: null,
     watchId: null,
     speedHistory: [],
     maxSpd: 0,
-    movingMs: 0,            // only time actually moving
     kcalPerKm: S.mode==='bike' ? 35 : 65,
     route: r,
     gpsReady: false
@@ -769,12 +818,16 @@ function onNavPos(pos) {
   n.lastSpd = spdKmh;
   if (spdKmh > n.maxSpd) n.maxSpd = spdKmh;
 
-  // ── Distance: only add when actually moving (speed > threshold) ──
+  // ── Distance: only add when actually moving ──
   if (n.lastPos && spdKmh > 1.5) {
     const d = haversine(n.lastPos[0], n.lastPos[1], lat, lng);
-    // Sanity: ignore GPS jumps > 200m between readings
     if (d > 0 && d < 0.2) {
       n.dist += d;
+    }
+    // Count moving time (seconds since last pos update)
+    if (n.lastPosTime) {
+      const dt = (Date.now() - n.lastPosTime) / 1000;
+      if (dt > 0 && dt < 30) n.movingSeconds += dt;
     }
   }
 
@@ -788,7 +841,6 @@ function onNavPos(pos) {
 function navTick() {
   const n = S.nav; if (!n) return;
 
-  // Before first GPS fix — show waiting indicators
   if (!n.gpsReady) {
     $('ln-spd').textContent = '…';
     $('ln-dist').textContent = '…';
@@ -801,10 +853,12 @@ function navTick() {
   const mm = Math.floor(elapsed / 60).toString().padStart(2, '0');
   const ss = (elapsed % 60).toString().padStart(2, '0');
   const distKm = fx(n.dist, 2);
-  const spdDisplay = fx(n.lastSpd, 1);
   const kcal = Math.round(distKm * n.kcalPerKm);
 
-  $('ln-spd').textContent = spdDisplay.toFixed(1);
+  // Current speed — show 0.0 when stationary
+  const curSpd = fx(n.lastSpd, 1);
+
+  $('ln-spd').textContent = curSpd.toFixed(1);
   $('ln-dist').textContent = distKm.toFixed(2);
   $('ln-time').textContent = mm + ':' + ss;
   $('ln-kcal').textContent = kcal;
@@ -840,9 +894,17 @@ function showSummary(n) {
   const elapsed = n.startTime ? Math.floor((Date.now() - n.startTime) / 1000) : 0;
   const distKm = fx(n.dist, 2);
   const mm = Math.floor(elapsed / 60), ss = elapsed % 60;
-  const avgSpd = elapsed > 0 && distKm > 0 ? fx(distKm / (elapsed / 3600), 1) : 0;
+
+  // Average speed = distance / time MOVING (not total time including stops)
+  const movSec = n.movingSeconds > 5 ? n.movingSeconds : elapsed;
+  const avgSpd = movSec > 0 && distKm > 0 ? fx(distKm / (movSec / 3600), 1) : 0;
+
   const kcal = Math.round(distKm * n.kcalPerKm);
-  const pace = distKm > 0 ? `${Math.floor(elapsed/distKm/60)}'${Math.round((elapsed/distKm)%60).toString().padStart(2,'0')}"` : '—';
+  // Pace in min/km based on moving time
+  const paceSecPerKm = distKm > 0 ? Math.round(movSec / distKm) : 0;
+  const pace = paceSecPerKm > 0
+    ? `${Math.floor(paceSecPerKm/60)}'${(paceSecPerKm%60).toString().padStart(2,'0')}"`
+    : '—';
   const mode = S.mode === 'bike' ? '🚴' : '🥾';
 
   $('sum-title').textContent=n.route.name+' · ukończona!';
