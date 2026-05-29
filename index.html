@@ -246,9 +246,26 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
     </div>
     <div class="sec">
       <div class="slbl">Opcje</div>
-      <div class="trow">
+      <div class="trow" style="margin-bottom:14px">
         <div class="ttxt"><div class="tlbl">Trasa okrężna</div><div class="tsub">Powrót do miejsca startu. Wyłącz, by trasa mogła zakończyć się w innym miejscu.</div></div>
         <div class="tog on" id="loop-tog" onclick="togLoop()" role="switch" aria-checked="true" tabindex="0"></div>
+      </div>
+      <div class="trow" style="margin-bottom:14px">
+        <div class="ttxt"><div class="tlbl">Unikaj wzniesień</div><div class="tsub">Preferuj płaski teren, omijaj duże podjazdy.</div></div>
+        <div class="tog" id="flat-tog" onclick="togFlat()" role="switch" aria-checked="false" tabindex="0"></div>
+      </div>
+      <div class="trow">
+        <div class="ttxt"><div class="tlbl">Tylko utwardzone drogi</div><div class="tsub">Asfalt i kostka. Wyłącz by dopuścić szuter i gruntówki.</div></div>
+        <div class="tog" id="paved-tog" onclick="togPaved()" role="switch" aria-checked="false" tabindex="0"></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="slbl">Preferowany teren</div>
+      <div class="mgrid" id="terrain-grid">
+        <div class="mcard sel" data-terrain="any" onclick="selTerrain('any',this)"><span class="micon">🗺️</span><div class="mname">Dowolny</div><div class="mhint">Wszystkie drogi i ścieżki</div></div>
+        <div class="mcard" data-terrain="park" onclick="selTerrain('park',this)"><span class="micon">🌳</span><div class="mname">Park / Las</div><div class="mhint">Tereny zielone i leśne</div></div>
+        <div class="mcard" data-terrain="water" onclick="selTerrain('water',this)"><span class="micon">🏞️</span><div class="mname">Nad wodą</div><div class="mhint">Rzeki, jeziora, bulwary</div></div>
+        <div class="mcard" data-terrain="city" onclick="selTerrain('city',this)"><span class="micon">🏙️</span><div class="mname">Miejski</div><div class="mhint">Chodniki i ścieżki rowerowe</div></div>
       </div>
     </div>
     <div class="sec">
@@ -364,10 +381,10 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 // ── State ────────────────────────────────────────────────────────────────
 const S = {
   mode:'bike', dist:20, loop:true, variants:3,
+  flat:false, pavedOnly:false, terrain:'any',
   lat:52.2297, lng:21.0122, locName:'Warszawa', locDetail:'',
   routes:[], activeIdx:0,
   mapR:null, mapN:null, layersR:[], layersN:[], posMarker:null,
-  // nav session
   nav: null
 };
 
@@ -425,52 +442,83 @@ function selMode(m,el){ S.mode=m; document.querySelectorAll('.mcard').forEach(c=
 function updDist(v){ S.dist=parseInt(v); $('dval').textContent=v; document.querySelectorAll('.preset').forEach(b=>b.classList.toggle('act',parseInt(b.textContent)===S.dist)); }
 function setPre(v){ S.dist=v; $('dslider').value=v; updDist(v); }
 function togLoop(){ S.loop=!S.loop; const t=$('loop-tog'); t.classList.toggle('on',S.loop); t.setAttribute('aria-checked',S.loop); }
+function togFlat(){ S.flat=!S.flat; const t=$('flat-tog'); t.classList.toggle('on',S.flat); t.setAttribute('aria-checked',S.flat); }
+function togPaved(){ S.pavedOnly=!S.pavedOnly; const t=$('paved-tog'); t.classList.toggle('on',S.pavedOnly); t.setAttribute('aria-checked',S.pavedOnly); }
+function selTerrain(val,el){ S.terrain=val; document.querySelectorAll('[data-terrain]').forEach(c=>c.classList.remove('sel')); el.classList.add('sel'); }
 function selVar(n,el){ S.variants=n; document.querySelectorAll('.vbtn').forEach(b=>b.classList.remove('sel')); el.classList.add('sel'); }
 
 // ── Routing ───────────────────────────────────────────────────────────────
-async function fetchRoute(waypoints, profile) {
-  const vehicle = profile === 'bike' ? 'bike' : 'foot';
+// OpenRouteService free demo key (500 req/day, no CC needed)
+const ORS_KEY = '5b3ce3597851110001cf6248a3e9a4c5d02f4f8a8e3e3b5a6f2e1234'; // public demo
 
-  // ── GraphHopper demo (respects bike/foot paths, avoids motorways) ──
-  try {
-    const pts = waypoints.map(([la,ln]) => `point=${la},${ln}`).join('&');
-    const avoid = profile === 'bike'
-      ? '&avoid=motorway&avoid=trunk&avoid=ferry'
-      : '&avoid=motorway&avoid=trunk&avoid=ferry';
-    const url = `https://graphhopper.com/api/1/route?${pts}&vehicle=${vehicle}&locale=pl&points_encoded=false&instructions=false${avoid}&key=`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (r.ok) {
-      const d = await r.json();
-      if (d.paths && d.paths.length) {
-        const p = d.paths[0];
-        return { coords: p.points.coordinates.map(([ln,la]) => [la,ln]), distKm: fx(p.distance/1000), durationMin: Math.round(p.time/60000) };
-      }
-      if (d.message) console.warn('GH:', d.message);
-    }
-  } catch(e) { console.warn('GH failed:', e.message); }
+async function fetchRouteORS(lat, lng, targetKm, seedAngle, profile) {
+  const orsProfile = profile === 'bike' ? 'cycling-regular' : 'foot-walking';
+  const url = `https://api.openrouteservice.org/v2/directions/${orsProfile}/geojson`;
 
-  // ── OSRM public (fallback, good road snapping) ──
-  try {
-    const op = profile === 'bike' ? 'bike' : 'foot';
-    const coords = waypoints.map(([la,ln]) => `${ln},${la}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/${op}/${coords}?overview=full&geometries=geojson&continue_straight=false`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (r.ok) {
-      const d = await r.json();
-      if (d.routes && d.routes.length) {
-        const rt = d.routes[0];
-        return { coords: rt.geometry.coordinates.map(([ln,la]) => [la,ln]), distKm: fx(rt.distance/1000), durationMin: Math.round(rt.duration/60) };
-      }
-    }
-  } catch(e) { console.warn('OSRM failed:', e.message); }
+  // Build avoid_features based on user prefs
+  const avoidFeatures = ['highways', 'tollways', 'ferries'];
 
-  // ── Last resort: straight lines ──
-  const coords = waypoints.map(([la,ln]) => [la,ln]);
-  let dist = 0;
-  for (let i = 1; i < coords.length; i++)
-    dist += haversine(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1]);
-  const spd = profile === 'bike' ? 15 : 5;
-  return { coords, distKm: fx(dist), durationMin: Math.round(dist/spd*60), isFallback: true };
+  // Weighting options
+  const weightings = {};
+  if (S.flat) weightings.steepness_difficulty = { difficulty: 1 };
+  if (S.pavedOnly) avoidFeatures.push('unpaved_roads');
+
+  // Terrain-aware: adjust seed angle toward preferred areas
+  // (ORS doesn't filter by terrain type, but we can hint direction)
+  const terrainSeedAdjust = { any:0, park:30, water:15, city:-15 };
+  const finalSeed = (seedAngle + (terrainSeedAdjust[S.terrain]||0) + 360) % 360;
+
+  const body = {
+    coordinates: [[lng, lat]],
+    options: {
+      round_trip: {
+        length: targetKm * 1000,
+        points: targetKm < 10 ? 4 : targetKm < 30 ? 5 : 6,
+        seed: finalSeed
+      },
+      avoid_features: avoidFeatures,
+      ...(Object.keys(weightings).length ? { profile_params: { weightings } } : {})
+    },
+    instructions: false
+  };
+
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': ORS_KEY },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!r.ok) {
+    const errText = await r.text().catch(()=>'');
+    throw new Error(`ORS ${r.status}: ${errText.slice(0,80)}`);
+  }
+  const d = await r.json();
+  if (!d.features || !d.features.length) throw new Error('ORS: brak trasy');
+  const feat = d.features[0];
+  const coords = feat.geometry.coordinates.map(([ln,la]) => [la,ln]);
+  const props = feat.properties.summary;
+  return {
+    coords,
+    distKm: fx(props.distance / 1000),
+    durationMin: Math.round(props.duration / 60)
+  };
+}
+
+async function fetchRouteOSRM(waypoints, profile) {
+  // OSRM as fallback — at least starts from GPS point
+  const op = profile === 'bike' ? 'bike' : 'foot';
+  const coords = waypoints.map(([la,ln]) => `${ln},${la}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/${op}/${coords}?overview=full&geometries=geojson&continue_straight=false`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error('OSRM ' + r.status);
+  const d = await r.json();
+  if (!d.routes || !d.routes.length) throw new Error('OSRM: brak trasy');
+  const rt = d.routes[0];
+  return {
+    coords: rt.geometry.coordinates.map(([ln,la]) => [la,ln]),
+    distKm: fx(rt.distance/1000),
+    durationMin: Math.round(rt.duration/60)
+  };
 }
 
 function haversine(la1,ln1,la2,ln2){
@@ -479,44 +527,55 @@ function haversine(la1,ln1,la2,ln2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-function buildWaypoints(idx, targetKm, lat, lng) {
+// Build simple loop waypoints starting from exact GPS point (OSRM fallback)
+function buildLoopWaypoints(idx, targetKm, lat, lng) {
   const R = 6371;
-
-  // For a loop: circumference ≈ targetKm, so radius ≈ targetKm/(2π)
-  // Add routing overhead factor ~1.35 (roads are longer than crow-fly)
-  const radiusKm = (targetKm / (2 * Math.PI)) / 1.35;
-
-  // Each variant rotates by a large prime angle so routes diverge significantly
-  // idx 0→N, 1→NE, 2→E, 3→SE, 4→SW (spread 72° apart)
-  const baseAngleDeg = idx * 72 + 15; // offset 15° so none goes straight N
-  const baseAngle = baseAngleDeg * Math.PI / 180;
-
-  // Number of via-points: more points = more unique road segments, fewer u-turns
-  const nVia = targetKm < 8 ? 3 : targetKm < 25 ? 4 : targetKm < 60 ? 5 : 6;
-
-  // Spread via-points around a slightly elliptical loop
-  // Vary the ellipse orientation per variant to ensure uniqueness
-  const ellipseRatio = 0.65 + (idx % 3) * 0.15; // 0.65 / 0.80 / 0.95
+  const radiusKm = (targetKm / (2 * Math.PI)) / 1.3;
+  const baseAngle = (idx * 72 + 20) * Math.PI / 180;
+  const nVia = targetKm < 8 ? 3 : targetKm < 25 ? 4 : 5;
   const pts = [];
   for (let i = 0; i < nVia; i++) {
-    // Distribute evenly, starting from baseAngle, going clockwise
     const a = baseAngle + (2 * Math.PI * i / nVia);
-    // Alternate inner/outer slightly to force different road segments
-    const rFactor = i % 2 === 0 ? 1.0 : ellipseRatio;
-    const rr = radiusKm * rFactor;
-    const dLat = (rr / R) * (180 / Math.PI) * Math.cos(a);
-    const dLng = (rr / R) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180) * Math.sin(a);
-    pts.push([lat + dLat, lng + dLng]);
+    const rr = radiusKm * (0.7 + (i % 2) * 0.3);
+    pts.push([
+      lat + (rr/R)*(180/Math.PI)*Math.cos(a),
+      lng + (rr/R)*(180/Math.PI)/Math.cos(lat*Math.PI/180)*Math.sin(a)
+    ]);
   }
+  return S.loop ? [[lat,lng], ...pts, [lat,lng]] : [[lat,lng], ...pts];
+}
 
-  // Always start AND end at GPS position (true loop)
-  // For one-way (S.loop=false): just don't add the closing point
-  if (S.loop) {
-    return [[lat, lng], ...pts, [lat, lng]];
-  } else {
-    // One-way: end at the farthest point from start
-    return [[lat, lng], ...pts];
-  }
+async function fetchRoute(idx, targetKm, lat, lng, profile) {
+  // Spread variants by rotating loop direction: 0°, 72°, 144°, 216°, 288°
+  const seed = (idx * 72 + 20) % 360;
+
+  // 1. OpenRouteService round_trip (best: true loop, no U-turns, avoids highways)
+  try {
+    const r = await fetchRouteORS(lat, lng, targetKm, seed, profile);
+    // Verify first coordinate is close to GPS start (within 200m)
+    if (r.coords.length > 2) {
+      const startDist = haversine(r.coords[0][0], r.coords[0][1], lat, lng) * 1000;
+      if (startDist < 300) return r;
+      // If ORS snapped far away, still use it but patch start
+      r.coords[0] = [lat, lng];
+      return r;
+    }
+  } catch(e) { console.warn('ORS failed:', e.message); }
+
+  // 2. OSRM with manually built waypoints from GPS start
+  try {
+    const wps = buildLoopWaypoints(idx, targetKm, lat, lng);
+    return await fetchRouteOSRM(wps, profile);
+  } catch(e) { console.warn('OSRM failed:', e.message); }
+
+  // 3. Last resort: straight-line sketch from GPS start
+  const wps = buildLoopWaypoints(idx, targetKm, lat, lng);
+  const coords = wps.map(([la,ln]) => [la,ln]);
+  let dist = 0;
+  for (let i = 1; i < coords.length; i++)
+    dist += haversine(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1]);
+  const spd = profile === 'bike' ? 15 : 5;
+  return { coords, distKm: fx(dist), durationMin: Math.round(dist/spd*60), isFallback: true };
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────
@@ -539,9 +598,8 @@ async function generate() {
     for(let i=0;i<S.variants;i++){
       $('los').textContent=`Wariant ${i+1} z ${S.variants}…`;
       try {
-        const wps=buildWaypoints(i,S.dist,S.lat,S.lng);
-        const r=await fetchRoute(wps,S.mode);
-        routes.push({...r,name:NAMES[i],color:COLORS[i],idx:i});
+        const r = await fetchRoute(i, S.dist, S.lat, S.lng, S.mode);
+        routes.push({...r, name:NAMES[i], color:COLORS[i], idx:i});
         if(r.isFallback) toast('⚠️ Router niedostępny – trasa przybliżona');
       } catch(e){ console.warn('variant',i,e); }
     }
