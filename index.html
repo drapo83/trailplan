@@ -456,37 +456,190 @@ function haversine(la1,ln1,la2,ln2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// Decode Valhalla polyline6 — each leg decoded separately then concatenated
 function decodeLeg(encoded, precision=6) {
   const factor = Math.pow(10, precision);
-  const pts = [];
-  let i=0, la=0, ln=0;
+  const pts = []; let i=0, la=0, ln=0;
   while (i < encoded.length) {
-    let b, shift=0, res=0;
-    do { b=encoded.charCodeAt(i++)-63; res|=(b&0x1f)<<shift; shift+=5; } while(b>=0x20);
-    la += (res&1) ? ~(res>>1) : (res>>1);
-    shift=0; res=0;
-    do { b=encoded.charCodeAt(i++)-63; res|=(b&0x1f)<<shift; shift+=5; } while(b>=0x20);
-    ln += (res&1) ? ~(res>>1) : (res>>1);
+    let b,shift=0,res=0;
+    do{b=encoded.charCodeAt(i++)-63;res|=(b&0x1f)<<shift;shift+=5;}while(b>=0x20);
+    la+=(res&1)?~(res>>1):(res>>1); shift=0;res=0;
+    do{b=encoded.charCodeAt(i++)-63;res|=(b&0x1f)<<shift;shift+=5;}while(b>=0x20);
+    ln+=(res&1)?~(res>>1):(res>>1);
     pts.push([la/factor, ln/factor]);
   }
   return pts;
 }
 
-// Generate 3 well-separated break-points forming a triangle/quad loop
-// Key insight: ALL points are type "break" → Valhalla treats each segment
-// as A→B routing with no backtracking obligation. 3 wide breaks = clean triangle.
-function makeBreakPoints(idx, targetKm, lat, lng) {
+// ── Dead-end pruner ────────────────────────────────────────────────────────
+// Detects and removes backtrack segments: if route goes A→B→A on same road,
+// it trims that spike. Tolerance = 25m for GPS noise.
+function pruneDeadEnds(coords) {
+  if (coords.length < 3) return coords;
+  const TOL = 0.00022; // ~25m in degrees
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const out = [coords[0]];
+    for (let i = 1; i < coords.length - 1; i++) {
+      const prev = out[out.length - 1];
+      const curr = coords[i];
+      const next = coords[i + 1];
+      // Check if next point is very close to prev (we went out and came back)
+      const distPrevNext = haversine(prev[0],prev[1],next[0],next[1]);
+      if (distPrevNext * 1000 < 40) {
+        // Skip both curr and next — they form a spike
+        i += 1;
+        changed = true;
+      } else {
+        out.push(curr);
+      }
+    }
+    out.push(coords[coords.length - 1]);
+    coords = out;
+  }
+  return coords;
+}
+
+// ── Overpass: find real water/park centroids to route near ─────────────────
+async function findTerrainPoints(lat, lng, radiusKm, terrain) {
+  const r = Math.round(Math.min(radiusKm, 20) * 1000);
+
+  const queries = {
+    water: `
+      [out:json][timeout:12];
+      (
+        way["natural"="water"]["water"!~"river"]["area"~"yes"](around:${r},${lat},${lng});
+        relation["natural"="water"]["water"!~"river"](around:${r},${lat},${lng});
+        way["natural"="water"]["water"="lake"](around:${r},${lat},${lng});
+        way["natural"="water"]["water"="pond"](around:${r},${lat},${lng});
+        way["natural"="water"]["water"="reservoir"](around:${r},${lat},${lng});
+        way["leisure"="marina"](around:${r},${lat},${lng});
+        way["waterway"="riverbank"](around:${r},${lat},${lng});
+        way["waterway"~"^(river|canal)$"]["width"](around:${r},${lat},${lng});
+      );
+      out center 20;`,
+    park: `
+      [out:json][timeout:12];
+      (
+        way["leisure"~"^(park|nature_reserve|garden)$"]["area"="yes"](around:${r},${lat},${lng});
+        relation["leisure"~"^(park|nature_reserve)$"](around:${r},${lat},${lng});
+        way["landuse"~"^(forest|recreation_ground|meadow)$"](around:${r},${lat},${lng});
+        way["natural"="wood"](around:${r},${lat},${lng});
+      );
+      out center 20;`,
+    city: `
+      [out:json][timeout:12];
+      (
+        way["highway"~"^(cycleway|footway|pedestrian|living_street)$"](around:${r},${lat},${lng});
+        way["highway"="path"]["bicycle"="designated"](around:${r},${lat},${lng});
+      );
+      out center 30;`
+  };
+
+  const q = queries[terrain];
+  if (!q) return [];
+
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(q),
+      signal: AbortSignal.timeout(10000)
+    });
+    const d = await res.json();
+    if (!d.elements?.length) return [];
+
+    // Extract centroid coordinates
+    const pts = d.elements
+      .filter(e => e.center || (e.lat && e.lon))
+      .map(e => ({
+        lat: e.center?.lat ?? e.lat,
+        lon: e.center?.lon ?? e.lon,
+        name: e.tags?.name || e.tags?.["natural"] || e.tags?.["leisure"] || terrain,
+        type: e.tags?.water || e.tags?.leisure || e.tags?.natural || e.tags?.highway || '',
+        dist: haversine(lat, lng, e.center?.lat ?? e.lat, e.center?.lon ?? e.lon)
+      }))
+      .filter(p => p.dist > 0.1) // exclude elements right on top of user
+      .sort((a,b) => a.dist - b.dist);
+
+    return pts;
+  } catch(e) {
+    console.warn('Overpass terrain:', e.message);
+    return [];
+  }
+}
+
+// ── Terrain check + warn + return found points ─────────────────────────────
+async function checkTerrainAndWarn(lat, lng, distKm, terrain) {
+  if (terrain === 'any') return [];
+  const scanRadius = Math.min(distKm * 0.7, 18);
+  $('los').textContent = 'Skanowanie terenu (OSM Overpass)…';
+
+  const pts = await findTerrainPoints(lat, lng, scanRadius, terrain);
+
+  const labels = {
+    water: { none:'jezior, stawów ani szerszych rzek', found:'akwenów wodnych' },
+    park:  { none:'parków, lasów ani terenów zielonych', found:'terenów zielonych' },
+    city:  { none:'oznakowanych ścieżek rowerowych/pieszych', found:'ścieżek' }
+  };
+  const lbl = labels[terrain] || { none: terrain, found: terrain };
+
+  if (pts.length === 0) {
+    showTerrainWarning(terrain, lbl.none, scanRadius);
+    S.terrain = 'any';
+    document.querySelectorAll('[data-terrain]').forEach(c=>c.classList.remove('sel'));
+    document.querySelector('[data-terrain="any"]')?.classList.add('sel');
+    return [];
+  }
+
+  // Show what was found — distinguish water types
+  if (terrain === 'water') {
+    const lakes  = pts.filter(p => ['lake','pond','reservoir','water'].includes(p.type));
+    const rivers = pts.filter(p => ['river','canal','riverbank'].includes(p.type));
+    const parts  = [];
+    if (lakes.length)  parts.push(`${lakes.length} jezior/stawów`);
+    if (rivers.length) parts.push(`${rivers.length} rzek/kanałów`);
+    const named = pts.slice(0,3).map(p=>p.name).filter(n=>n&&n!==terrain).join(', ');
+    toast(`💧 Znaleziono: ${parts.join(' i ')}${named?' ('+named+')':''}`, 3500);
+  } else {
+    const named = pts.slice(0,3).map(p=>p.name).filter(n=>n&&n!==terrain).join(', ');
+    toast(`✅ Znaleziono ${pts.length} ${lbl.found}${named?' ('+named+')':''}`, 3000);
+  }
+
+  return pts; // caller uses these as preferred break-point targets
+}
+
+// ── Break-points: prefer terrain targets if available ─────────────────────
+function makeBreakPoints(idx, targetKm, lat, lng, terrainPts=[]) {
   const R = 6371;
-  // Larger radius = break points further out = router less likely to backtrack
-  // For a triangle: perimeter ≈ 3 × side, side ≈ targetKm/3, "radius" of circumscribed circle ≈ side/√3
-  const radiusKm = (targetKm / 3) / Math.sqrt(3) / 1.25; // /1.25 for road overhead
-  // Each variant rotated by 60° + 20° offset — 5 variants = 0°,60°,120°,180°,240°
+  const radiusKm = (targetKm / 3) / Math.sqrt(3) / 1.2;
   const baseAngle = (idx * 60 + 20) * Math.PI / 180;
-  const nBreaks = 3;
+
+  if (terrainPts.length >= 3) {
+    // Use actual OSM terrain centroids as break-points — route will pass near them
+    // Pick 3 points spread around the radius, prefer closer ones
+    const maxR = radiusKm * 2.5;
+    const inRange = terrainPts.filter(p => p.dist <= maxR);
+    if (inRange.length >= 3) {
+      // Spread selection: pick pts in different angular sectors
+      const sectors = [[], [], []];
+      inRange.forEach(p => {
+        const angle = Math.atan2(p.lon - lng, p.lat - lat);
+        const sector = Math.floor(((angle + Math.PI) / (2*Math.PI)) * 3) % 3;
+        sectors[sector].push(p);
+      });
+      // If each sector has at least 1 pt, use one from each
+      if (sectors.every(s => s.length > 0)) {
+        return sectors.map(s => s[0]);
+      }
+      // Otherwise just take 3 closest
+      return inRange.slice(0, 3).map(p => ({ lat: p.lat, lon: p.lon }));
+    }
+  }
+
+  // Default geometric break-points
   const pts = [];
-  for (let i = 0; i < nBreaks; i++) {
-    const a = baseAngle + (2 * Math.PI * i / nBreaks);
+  for (let i = 0; i < 3; i++) {
+    const a = baseAngle + (2 * Math.PI * i / 3);
     const dLat = (radiusKm/R)*(180/Math.PI)*Math.cos(a);
     const dLng = (radiusKm/R)*(180/Math.PI)/Math.cos(lat*Math.PI/180)*Math.sin(a);
     pts.push({ lat: lat+dLat, lon: lng+dLng });
@@ -494,209 +647,90 @@ function makeBreakPoints(idx, targetKm, lat, lng) {
   return pts;
 }
 
-async function fetchValhalla(idx, targetKm, lat, lng, profile) {
+async function fetchValhalla(idx, targetKm, lat, lng, profile, terrainPts=[]) {
   const costing = profile === 'bike' ? 'bicycle' : 'pedestrian';
-  const breaks = makeBreakPoints(idx, targetKm, lat, lng);
+  const breaks = makeBreakPoints(idx, targetKm, lat, lng, terrainPts);
 
-  // All locations are type "break" — GPS start, 3 corners, GPS end
-  // This forces clean A→B→C→D→A routing with no through-point backtracking
   const locations = [
-    { lon: lng,         lat: lat,         type: 'break' },
-    { lon: breaks[0].lon, lat: breaks[0].lat, type: 'break' },
-    { lon: breaks[1].lon, lat: breaks[1].lat, type: 'break' },
-    { lon: breaks[2].lon, lat: breaks[2].lat, type: 'break' },
-    { lon: lng,         lat: lat,         type: 'break' }  // back to GPS
+    { lon:lng, lat:lat, type:'break' },
+    { lon:breaks[0].lon||breaks[0].lon, lat:breaks[0].lat, type:'break' },
+    { lon:breaks[1].lon, lat:breaks[1].lat, type:'break' },
+    { lon:breaks[2].lon, lat:breaks[2].lat, type:'break' },
+    { lon:lng, lat:lat, type:'break' }
   ];
 
   const costingOpts = profile === 'bike' ? {
-    bicycle: {
-      use_roads: S.pavedOnly ? 0.8 : 0.3,
-      use_hills: S.flat ? 0.0 : 0.4,
-      bicycle_type: 'Road'
-    }
+    bicycle: { use_roads: S.pavedOnly?0.8:0.3, use_hills: S.flat?0.0:0.4, bicycle_type:'Road' }
   } : {
-    pedestrian: {
-      use_roads: S.pavedOnly ? 0.5 : 0.1,
-      use_hills: S.flat ? 0.0 : 0.5,
-      walkway_factor: 0.9
-    }
+    pedestrian: { use_roads: S.pavedOnly?0.5:0.1, use_hills: S.flat?0.0:0.5, walkway_factor:0.9 }
   };
 
-  const body = { locations, costing, costing_options: costingOpts, units: 'km' };
-
   const r = await fetch(`${VALHALLA}/route`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ locations, costing, costing_options:costingOpts, units:'km' }),
     signal: AbortSignal.timeout(14000)
   });
-  if (!r.ok) {
-    const t = await r.text().catch(()=>'');
-    throw new Error(`Valhalla ${r.status}: ${t.slice(0,60)}`);
-  }
+  if (!r.ok) { const t=await r.text().catch(()=>''); throw new Error(`Valhalla ${r.status}: ${t.slice(0,60)}`); }
   const d = await r.json();
   if (!d.trip?.legs) throw new Error('Valhalla: brak trasy');
 
-  // Decode each leg separately and concatenate (skip duplicate first point)
   let coords = [];
   for (const leg of d.trip.legs) {
     const pts = decodeLeg(leg.shape, 6);
-    if (coords.length > 0) pts.shift(); // remove duplicate junction point
+    if (coords.length > 0) pts.shift();
     coords = coords.concat(pts);
   }
-
-  // Ensure route starts and ends exactly at GPS position
   coords[0] = [lat, lng];
-  coords[coords.length - 1] = [lat, lng];
+  coords[coords.length-1] = [lat, lng];
+  coords = pruneDeadEnds(coords);
 
   const s = d.trip.summary;
-  return { coords, distKm: fx(s.length, 1), durationMin: Math.round(s.time/60) };
+  return { coords, distKm: fx(s.length,1), durationMin: Math.round(s.time/60) };
 }
 
-async function fetchOSRMTrip(idx, targetKm, lat, lng, profile) {
-  // OSRM /trip — dedicated round-trip endpoint, no dead ends, returns to start
+async function fetchOSRMTrip(idx, targetKm, lat, lng, profile, terrainPts=[]) {
   const op = profile === 'bike' ? 'bike' : 'foot';
-  const breaks = makeBreakPoints(idx, targetKm, lat, lng);
-  // All points including GPS start — OSRM trip will close the loop automatically
-  const pts = [
-    `${lng},${lat}`,
-    ...breaks.map(p => `${p.lon},${p.lat}`)
-  ].join(';');
+  const breaks = makeBreakPoints(idx, targetKm, lat, lng, terrainPts);
+  const pts = [`${lng},${lat}`, ...breaks.map(p=>`${p.lon},${p.lat}`)].join(';');
   const url = `https://router.project-osrm.org/trip/v1/${op}/${pts}?overview=full&geometries=geojson&roundtrip=true&source=first&destination=last`;
   const r = await fetch(url, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error('OSRM trip ' + r.status);
   const d = await r.json();
   if (!d.trips?.length) throw new Error('OSRM trip: brak trasy');
   const rt = d.trips[0];
-  const coords = rt.geometry.coordinates.map(([ln,la]) => [la,ln]);
+  let coords = rt.geometry.coordinates.map(([ln,la]) => [la,ln]);
   coords[0] = [lat, lng];
   coords[coords.length-1] = [lat, lng];
+  coords = pruneDeadEnds(coords);
   return { coords, distKm: fx(rt.distance/1000), durationMin: Math.round(rt.duration/60) };
 }
 
-async function fetchRoute(idx, targetKm, lat, lng, profile) {
-  // 1. Valhalla /route with break-points — clean loop from GPS
-  try {
-    return await fetchValhalla(idx, targetKm, lat, lng, profile);
-  } catch(e) { console.warn('Valhalla:', e.message); }
-
-  // 2. OSRM /trip — dedicated round-trip, no dead ends
-  try {
-    return await fetchOSRMTrip(idx, targetKm, lat, lng, profile);
-  } catch(e) { console.warn('OSRM trip:', e.message); }
-
-  // 3. Straight-line sketch (always works)
-  const breaks = makeBreakPoints(idx, targetKm, lat, lng);
+async function fetchRoute(idx, targetKm, lat, lng, profile, terrainPts=[]) {
+  try { return await fetchValhalla(idx, targetKm, lat, lng, profile, terrainPts); }
+  catch(e) { console.warn('Valhalla:', e.message); }
+  try { return await fetchOSRMTrip(idx, targetKm, lat, lng, profile, terrainPts); }
+  catch(e) { console.warn('OSRM trip:', e.message); }
+  // Fallback
+  const breaks = makeBreakPoints(idx, targetKm, lat, lng, terrainPts);
   const coords = [[lat,lng], ...breaks.map(p=>[p.lat,p.lon]), [lat,lng]];
-  let dist = 0;
-  for (let i=1; i<coords.length; i++)
-    dist += haversine(coords[i-1][0],coords[i-1][1],coords[i][0],coords[i][1]);
-  return { coords, distKm: fx(dist), durationMin: Math.round(dist/(profile==='bike'?15:5)*60), isFallback: true };
-}
-
-// ── Overpass terrain scan ─────────────────────────────────────────────────
-// Scans OSM for water bodies, parks, cycle paths near the user's location
-async function scanTerrain(lat, lng, radiusKm) {
-  const r = Math.round(radiusKm * 1000);
-  const query = `
-    [out:json][timeout:10];
-    (
-      way["natural"~"water|riverbank|coastline"](around:${r},${lat},${lng});
-      relation["natural"="water"](around:${r},${lat},${lng});
-      way["waterway"~"river|canal|stream"](around:${r},${lat},${lng});
-      way["leisure"~"park|nature_reserve|garden"](around:${r},${lat},${lng});
-      relation["leisure"~"park|nature_reserve"](around:${r},${lat},${lng});
-      way["landuse"~"forest|recreation_ground"](around:${r},${lat},${lng});
-      way["highway"="cycleway"](around:${r},${lat},${lng});
-      way["route"="bicycle"](around:${r},${lat},${lng});
-    );
-    out count;
-  `;
-  try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: 'data=' + encodeURIComponent(query),
-      signal: AbortSignal.timeout(8000)
-    });
-    const d = await res.json();
-    const counts = d.elements?.[0]?.tags || {};
-    return {
-      hasWater: parseInt(counts.ways||0) > 0 || parseInt(counts.relations||0) > 0,
-      hasParks: false, // simplified — we check all in one query
-      total: parseInt(counts.total||0),
-      raw: counts
-    };
-  } catch(e) {
-    console.warn('Overpass:', e.message);
-    return null;
-  }
-}
-
-async function checkTerrainAndWarn(lat, lng, distKm, terrain) {
-  if (terrain === 'any') return; // no check needed
-
-  const scanRadius = Math.min(distKm * 0.6, 15); // scan ~60% of route radius
-  $('los').textContent = 'Skanowanie terenu w okolicy…';
-
-  const terrainQueries = {
-    water: `[out:json][timeout:10];(way["natural"~"water|riverbank"](around:${Math.round(scanRadius*1000)},${lat},${lng});way["waterway"~"river|canal|stream"](around:${Math.round(scanRadius*1000)},${lat},${lng});relation["natural"="water"](around:${Math.round(scanRadius*1000)},${lat},${lng}););out count;`,
-    park:  `[out:json][timeout:10];(way["leisure"~"park|nature_reserve|garden|forest"](around:${Math.round(scanRadius*1000)},${lat},${lng});way["landuse"~"forest|recreation_ground|meadow"](around:${Math.round(scanRadius*1000)},${lat},${lng}););out count;`,
-    city:  `[out:json][timeout:10];(way["highway"~"cycleway|footway|pedestrian|path"](around:${Math.round(scanRadius*1000)},${lat},${lng}););out count;`,
-  };
-
-  const terrainLabels = {
-    water: 'wody (rzeki, jeziora, stawy)',
-    park:  'parków i terenów leśnych',
-    city:  'ścieżek rowerowych i pieszych'
-  };
-
-  try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: 'data=' + encodeURIComponent(terrainQueries[terrain] || terrainQueries.water),
-      signal: AbortSignal.timeout(8000)
-    });
-    const d = await res.json();
-    const total = parseInt(d.elements?.[0]?.tags?.total || d.elements?.length || 0);
-
-    if (total === 0) {
-      // Nothing found — warn user and switch to 'any'
-      showTerrainWarning(terrain, terrainLabels[terrain], scanRadius);
-      S.terrain = 'any'; // fallback silently
-      // Update UI
-      document.querySelectorAll('[data-terrain]').forEach(c => c.classList.remove('sel'));
-      document.querySelector('[data-terrain="any"]')?.classList.add('sel');
-    } else {
-      toast(`✅ Znaleziono ${terrainLabels[terrain]} w promieniu ${Math.round(scanRadius)} km`);
-    }
-  } catch(e) {
-    console.warn('Terrain check failed:', e.message);
-    // Don't block generation on Overpass failure
-  }
+  let dist=0;
+  for(let i=1;i<coords.length;i++) dist+=haversine(coords[i-1][0],coords[i-1][1],coords[i][0],coords[i][1]);
+  return { coords, distKm:fx(dist), durationMin:Math.round(dist/(profile==='bike'?15:5)*60), isFallback:true };
 }
 
 function showTerrainWarning(terrain, label, radiusKm) {
   const icons = { water:'💧', park:'🌳', city:'🏙️' };
   const suggestions = {
-    water: 'Najbliższa woda może być dalej niż zasięg trasy. Możesz zwiększyć dystans lub wybrać "Dowolny" teren.',
-    park:  'W pobliżu nie wykryto parków ani lasów. Rozważ zwiększenie dystansu lub wybór "Dowolny".',
-    city:  'Brak oznakowaych ścieżek rowerowych/pieszych w okolicy. Trasa będzie prowadzić drogami.'
+    water:'Brak jezior, stawów ani szerokich rzek w pobliżu. Zwiększ dystans lub wybierz "Dowolny".',
+    park:'Brak parków, lasów ani terenów zielonych w pobliżu. Zwiększ dystans lub wybierz "Dowolny".',
+    city:'Brak oznakowanych ścieżek rowerowych/pieszych w pobliżu. Trasa poprowadzi drogami.'
   };
-
-  // Show inline warning in loading panel
   const warn = document.createElement('div');
-  warn.style.cssText = 'background:var(--amber-pale);border:1px solid var(--amber);border-radius:var(--rsm);padding:10px 13px;font-size:12px;color:var(--amber);line-height:1.5;margin-top:8px;max-width:280px;text-align:left';
-  warn.innerHTML = `<strong>${icons[terrain]} Brak ${label}</strong> w promieniu ${Math.round(radiusKm)} km.<br>${suggestions[terrain]}<br><em>Generuję trasę dla "Dowolny" teren.</em>`;
-
-  const stepsEl = document.querySelector('.lo-steps');
-  if (stepsEl) {
-    // Remove previous warnings
-    stepsEl.querySelectorAll('.terrain-warn').forEach(e => e.remove());
-    warn.className = 'terrain-warn';
-    stepsEl.after(warn);
-    // Auto-remove after generation
-    setTimeout(() => warn.remove(), 8000);
-  }
+  warn.style.cssText='background:var(--amber-pale);border:1px solid var(--amber);border-radius:var(--rsm);padding:10px 13px;font-size:12px;color:var(--amber);line-height:1.5;margin-top:8px;max-width:280px;text-align:left';
+  warn.innerHTML=`<strong>${icons[terrain]||'⚠️'} Brak ${label}</strong> w promieniu ${Math.round(radiusKm)} km.<br>${suggestions[terrain]||''}<br><em>Generuję trasę bez preferencji terenu.</em>`;
+  const stepsEl=document.querySelector('.lo-steps');
+  if(stepsEl){ stepsEl.querySelectorAll('.terrain-warn').forEach(e=>e.remove()); warn.className='terrain-warn'; stepsEl.after(warn); setTimeout(()=>warn.remove(),9000); }
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────
@@ -712,9 +746,10 @@ async function generate() {
   try {
     stepDone(1); await dl(150);
 
-    // Terrain scan — check if preferred terrain exists near user
+    // Terrain scan — find real OSM objects to route near
+    let terrainPts = [];
     if (S.terrain !== 'any') {
-      await checkTerrainAndWarn(S.lat, S.lng, S.dist, S.terrain);
+      terrainPts = await checkTerrainAndWarn(S.lat, S.lng, S.dist, S.terrain);
     }
 
     $('los').textContent='Łączenie z routerem…'; stepDone(2); await dl(200);
@@ -725,7 +760,7 @@ async function generate() {
     for(let i=0;i<S.variants;i++){
       $('los').textContent=`Wariant ${i+1} z ${S.variants}…`;
       try {
-        const r = await fetchRoute(i, S.dist, S.lat, S.lng, S.mode);
+        const r = await fetchRoute(i, S.dist, S.lat, S.lng, S.mode, terrainPts);
         routes.push({...r, name:NAMES[i], color:COLORS[i], idx:i});
         if(r.isFallback) toast('⚠️ Router niedostępny – trasa przybliżona');
       } catch(e){ console.warn('variant',i,e); }
