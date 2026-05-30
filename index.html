@@ -448,78 +448,7 @@ function selTerrain(val,el){ S.terrain=val; document.querySelectorAll('[data-ter
 function selVar(n,el){ S.variants=n; document.querySelectorAll('.vbtn').forEach(b=>b.classList.remove('sel')); el.classList.add('sel'); }
 
 // ── Routing ───────────────────────────────────────────────────────────────
-// OpenRouteService free demo key (500 req/day, no CC needed)
-const ORS_KEY = '5b3ce3597851110001cf6248a3e9a4c5d02f4f8a8e3e3b5a6f2e1234'; // public demo
-
-async function fetchRouteORS(lat, lng, targetKm, seedAngle, profile) {
-  const orsProfile = profile === 'bike' ? 'cycling-regular' : 'foot-walking';
-  const url = `https://api.openrouteservice.org/v2/directions/${orsProfile}/geojson`;
-
-  // Build avoid_features based on user prefs
-  const avoidFeatures = ['highways', 'tollways', 'ferries'];
-
-  // Weighting options
-  const weightings = {};
-  if (S.flat) weightings.steepness_difficulty = { difficulty: 1 };
-  if (S.pavedOnly) avoidFeatures.push('unpaved_roads');
-
-  // Terrain-aware: adjust seed angle toward preferred areas
-  // (ORS doesn't filter by terrain type, but we can hint direction)
-  const terrainSeedAdjust = { any:0, park:30, water:15, city:-15 };
-  const finalSeed = (seedAngle + (terrainSeedAdjust[S.terrain]||0) + 360) % 360;
-
-  const body = {
-    coordinates: [[lng, lat]],
-    options: {
-      round_trip: {
-        length: targetKm * 1000,
-        points: targetKm < 10 ? 4 : targetKm < 30 ? 5 : 6,
-        seed: finalSeed
-      },
-      avoid_features: avoidFeatures,
-      ...(Object.keys(weightings).length ? { profile_params: { weightings } } : {})
-    },
-    instructions: false
-  };
-
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': ORS_KEY },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(12000)
-  });
-  if (!r.ok) {
-    const errText = await r.text().catch(()=>'');
-    throw new Error(`ORS ${r.status}: ${errText.slice(0,80)}`);
-  }
-  const d = await r.json();
-  if (!d.features || !d.features.length) throw new Error('ORS: brak trasy');
-  const feat = d.features[0];
-  const coords = feat.geometry.coordinates.map(([ln,la]) => [la,ln]);
-  const props = feat.properties.summary;
-  return {
-    coords,
-    distKm: fx(props.distance / 1000),
-    durationMin: Math.round(props.duration / 60)
-  };
-}
-
-async function fetchRouteOSRM(waypoints, profile) {
-  // OSRM as fallback — at least starts from GPS point
-  const op = profile === 'bike' ? 'bike' : 'foot';
-  const coords = waypoints.map(([la,ln]) => `${ln},${la}`).join(';');
-  const url = `https://router.project-osrm.org/route/v1/${op}/${coords}?overview=full&geometries=geojson&continue_straight=false`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error('OSRM ' + r.status);
-  const d = await r.json();
-  if (!d.routes || !d.routes.length) throw new Error('OSRM: brak trasy');
-  const rt = d.routes[0];
-  return {
-    coords: rt.geometry.coordinates.map(([ln,la]) => [la,ln]),
-    distKm: fx(rt.distance/1000),
-    durationMin: Math.round(rt.duration/60)
-  };
-}
+const VALHALLA = 'https://valhalla1.openstreetmap.de';
 
 function haversine(la1,ln1,la2,ln2){
   const R=6371,dL=(la2-la1)*Math.PI/180,dN=(ln2-ln1)*Math.PI/180;
@@ -527,72 +456,270 @@ function haversine(la1,ln1,la2,ln2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// Build simple loop waypoints starting from exact GPS point (OSRM fallback)
-function buildLoopWaypoints(idx, targetKm, lat, lng) {
-  const R = 6371;
-  const radiusKm = (targetKm / (2 * Math.PI)) / 1.3;
-  const baseAngle = (idx * 72 + 20) * Math.PI / 180;
-  const nVia = targetKm < 8 ? 3 : targetKm < 25 ? 4 : 5;
+// Decode Valhalla polyline6 — each leg decoded separately then concatenated
+function decodeLeg(encoded, precision=6) {
+  const factor = Math.pow(10, precision);
   const pts = [];
-  for (let i = 0; i < nVia; i++) {
-    const a = baseAngle + (2 * Math.PI * i / nVia);
-    const rr = radiusKm * (0.7 + (i % 2) * 0.3);
-    pts.push([
-      lat + (rr/R)*(180/Math.PI)*Math.cos(a),
-      lng + (rr/R)*(180/Math.PI)/Math.cos(lat*Math.PI/180)*Math.sin(a)
-    ]);
+  let i=0, la=0, ln=0;
+  while (i < encoded.length) {
+    let b, shift=0, res=0;
+    do { b=encoded.charCodeAt(i++)-63; res|=(b&0x1f)<<shift; shift+=5; } while(b>=0x20);
+    la += (res&1) ? ~(res>>1) : (res>>1);
+    shift=0; res=0;
+    do { b=encoded.charCodeAt(i++)-63; res|=(b&0x1f)<<shift; shift+=5; } while(b>=0x20);
+    ln += (res&1) ? ~(res>>1) : (res>>1);
+    pts.push([la/factor, ln/factor]);
   }
-  return S.loop ? [[lat,lng], ...pts, [lat,lng]] : [[lat,lng], ...pts];
+  return pts;
+}
+
+// Generate 3 well-separated break-points forming a triangle/quad loop
+// Key insight: ALL points are type "break" → Valhalla treats each segment
+// as A→B routing with no backtracking obligation. 3 wide breaks = clean triangle.
+function makeBreakPoints(idx, targetKm, lat, lng) {
+  const R = 6371;
+  // Larger radius = break points further out = router less likely to backtrack
+  // For a triangle: perimeter ≈ 3 × side, side ≈ targetKm/3, "radius" of circumscribed circle ≈ side/√3
+  const radiusKm = (targetKm / 3) / Math.sqrt(3) / 1.25; // /1.25 for road overhead
+  // Each variant rotated by 60° + 20° offset — 5 variants = 0°,60°,120°,180°,240°
+  const baseAngle = (idx * 60 + 20) * Math.PI / 180;
+  const nBreaks = 3;
+  const pts = [];
+  for (let i = 0; i < nBreaks; i++) {
+    const a = baseAngle + (2 * Math.PI * i / nBreaks);
+    const dLat = (radiusKm/R)*(180/Math.PI)*Math.cos(a);
+    const dLng = (radiusKm/R)*(180/Math.PI)/Math.cos(lat*Math.PI/180)*Math.sin(a);
+    pts.push({ lat: lat+dLat, lon: lng+dLng });
+  }
+  return pts;
+}
+
+async function fetchValhalla(idx, targetKm, lat, lng, profile) {
+  const costing = profile === 'bike' ? 'bicycle' : 'pedestrian';
+  const breaks = makeBreakPoints(idx, targetKm, lat, lng);
+
+  // All locations are type "break" — GPS start, 3 corners, GPS end
+  // This forces clean A→B→C→D→A routing with no through-point backtracking
+  const locations = [
+    { lon: lng,         lat: lat,         type: 'break' },
+    { lon: breaks[0].lon, lat: breaks[0].lat, type: 'break' },
+    { lon: breaks[1].lon, lat: breaks[1].lat, type: 'break' },
+    { lon: breaks[2].lon, lat: breaks[2].lat, type: 'break' },
+    { lon: lng,         lat: lat,         type: 'break' }  // back to GPS
+  ];
+
+  const costingOpts = profile === 'bike' ? {
+    bicycle: {
+      use_roads: S.pavedOnly ? 0.8 : 0.3,
+      use_hills: S.flat ? 0.0 : 0.4,
+      bicycle_type: 'Road'
+    }
+  } : {
+    pedestrian: {
+      use_roads: S.pavedOnly ? 0.5 : 0.1,
+      use_hills: S.flat ? 0.0 : 0.5,
+      walkway_factor: 0.9
+    }
+  };
+
+  const body = { locations, costing, costing_options: costingOpts, units: 'km' };
+
+  const r = await fetch(`${VALHALLA}/route`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(14000)
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(()=>'');
+    throw new Error(`Valhalla ${r.status}: ${t.slice(0,60)}`);
+  }
+  const d = await r.json();
+  if (!d.trip?.legs) throw new Error('Valhalla: brak trasy');
+
+  // Decode each leg separately and concatenate (skip duplicate first point)
+  let coords = [];
+  for (const leg of d.trip.legs) {
+    const pts = decodeLeg(leg.shape, 6);
+    if (coords.length > 0) pts.shift(); // remove duplicate junction point
+    coords = coords.concat(pts);
+  }
+
+  // Ensure route starts and ends exactly at GPS position
+  coords[0] = [lat, lng];
+  coords[coords.length - 1] = [lat, lng];
+
+  const s = d.trip.summary;
+  return { coords, distKm: fx(s.length, 1), durationMin: Math.round(s.time/60) };
+}
+
+async function fetchOSRMTrip(idx, targetKm, lat, lng, profile) {
+  // OSRM /trip — dedicated round-trip endpoint, no dead ends, returns to start
+  const op = profile === 'bike' ? 'bike' : 'foot';
+  const breaks = makeBreakPoints(idx, targetKm, lat, lng);
+  // All points including GPS start — OSRM trip will close the loop automatically
+  const pts = [
+    `${lng},${lat}`,
+    ...breaks.map(p => `${p.lon},${p.lat}`)
+  ].join(';');
+  const url = `https://router.project-osrm.org/trip/v1/${op}/${pts}?overview=full&geometries=geojson&roundtrip=true&source=first&destination=last`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw new Error('OSRM trip ' + r.status);
+  const d = await r.json();
+  if (!d.trips?.length) throw new Error('OSRM trip: brak trasy');
+  const rt = d.trips[0];
+  const coords = rt.geometry.coordinates.map(([ln,la]) => [la,ln]);
+  coords[0] = [lat, lng];
+  coords[coords.length-1] = [lat, lng];
+  return { coords, distKm: fx(rt.distance/1000), durationMin: Math.round(rt.duration/60) };
 }
 
 async function fetchRoute(idx, targetKm, lat, lng, profile) {
-  // Spread variants by rotating loop direction: 0°, 72°, 144°, 216°, 288°
-  const seed = (idx * 72 + 20) % 360;
-
-  // 1. OpenRouteService round_trip (best: true loop, no U-turns, avoids highways)
+  // 1. Valhalla /route with break-points — clean loop from GPS
   try {
-    const r = await fetchRouteORS(lat, lng, targetKm, seed, profile);
-    // Verify first coordinate is close to GPS start (within 200m)
-    if (r.coords.length > 2) {
-      const startDist = haversine(r.coords[0][0], r.coords[0][1], lat, lng) * 1000;
-      if (startDist < 300) return r;
-      // If ORS snapped far away, still use it but patch start
-      r.coords[0] = [lat, lng];
-      return r;
-    }
-  } catch(e) { console.warn('ORS failed:', e.message); }
+    return await fetchValhalla(idx, targetKm, lat, lng, profile);
+  } catch(e) { console.warn('Valhalla:', e.message); }
 
-  // 2. OSRM with manually built waypoints from GPS start
+  // 2. OSRM /trip — dedicated round-trip, no dead ends
   try {
-    const wps = buildLoopWaypoints(idx, targetKm, lat, lng);
-    return await fetchRouteOSRM(wps, profile);
-  } catch(e) { console.warn('OSRM failed:', e.message); }
+    return await fetchOSRMTrip(idx, targetKm, lat, lng, profile);
+  } catch(e) { console.warn('OSRM trip:', e.message); }
 
-  // 3. Last resort: straight-line sketch from GPS start
-  const wps = buildLoopWaypoints(idx, targetKm, lat, lng);
-  const coords = wps.map(([la,ln]) => [la,ln]);
+  // 3. Straight-line sketch (always works)
+  const breaks = makeBreakPoints(idx, targetKm, lat, lng);
+  const coords = [[lat,lng], ...breaks.map(p=>[p.lat,p.lon]), [lat,lng]];
   let dist = 0;
-  for (let i = 1; i < coords.length; i++)
-    dist += haversine(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1]);
-  const spd = profile === 'bike' ? 15 : 5;
-  return { coords, distKm: fx(dist), durationMin: Math.round(dist/spd*60), isFallback: true };
+  for (let i=1; i<coords.length; i++)
+    dist += haversine(coords[i-1][0],coords[i-1][1],coords[i][0],coords[i][1]);
+  return { coords, distKm: fx(dist), durationMin: Math.round(dist/(profile==='bike'?15:5)*60), isFallback: true };
+}
+
+// ── Overpass terrain scan ─────────────────────────────────────────────────
+// Scans OSM for water bodies, parks, cycle paths near the user's location
+async function scanTerrain(lat, lng, radiusKm) {
+  const r = Math.round(radiusKm * 1000);
+  const query = `
+    [out:json][timeout:10];
+    (
+      way["natural"~"water|riverbank|coastline"](around:${r},${lat},${lng});
+      relation["natural"="water"](around:${r},${lat},${lng});
+      way["waterway"~"river|canal|stream"](around:${r},${lat},${lng});
+      way["leisure"~"park|nature_reserve|garden"](around:${r},${lat},${lng});
+      relation["leisure"~"park|nature_reserve"](around:${r},${lat},${lng});
+      way["landuse"~"forest|recreation_ground"](around:${r},${lat},${lng});
+      way["highway"="cycleway"](around:${r},${lat},${lng});
+      way["route"="bicycle"](around:${r},${lat},${lng});
+    );
+    out count;
+  `;
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query),
+      signal: AbortSignal.timeout(8000)
+    });
+    const d = await res.json();
+    const counts = d.elements?.[0]?.tags || {};
+    return {
+      hasWater: parseInt(counts.ways||0) > 0 || parseInt(counts.relations||0) > 0,
+      hasParks: false, // simplified — we check all in one query
+      total: parseInt(counts.total||0),
+      raw: counts
+    };
+  } catch(e) {
+    console.warn('Overpass:', e.message);
+    return null;
+  }
+}
+
+async function checkTerrainAndWarn(lat, lng, distKm, terrain) {
+  if (terrain === 'any') return; // no check needed
+
+  const scanRadius = Math.min(distKm * 0.6, 15); // scan ~60% of route radius
+  $('los').textContent = 'Skanowanie terenu w okolicy…';
+
+  const terrainQueries = {
+    water: `[out:json][timeout:10];(way["natural"~"water|riverbank"](around:${Math.round(scanRadius*1000)},${lat},${lng});way["waterway"~"river|canal|stream"](around:${Math.round(scanRadius*1000)},${lat},${lng});relation["natural"="water"](around:${Math.round(scanRadius*1000)},${lat},${lng}););out count;`,
+    park:  `[out:json][timeout:10];(way["leisure"~"park|nature_reserve|garden|forest"](around:${Math.round(scanRadius*1000)},${lat},${lng});way["landuse"~"forest|recreation_ground|meadow"](around:${Math.round(scanRadius*1000)},${lat},${lng}););out count;`,
+    city:  `[out:json][timeout:10];(way["highway"~"cycleway|footway|pedestrian|path"](around:${Math.round(scanRadius*1000)},${lat},${lng}););out count;`,
+  };
+
+  const terrainLabels = {
+    water: 'wody (rzeki, jeziora, stawy)',
+    park:  'parków i terenów leśnych',
+    city:  'ścieżek rowerowych i pieszych'
+  };
+
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(terrainQueries[terrain] || terrainQueries.water),
+      signal: AbortSignal.timeout(8000)
+    });
+    const d = await res.json();
+    const total = parseInt(d.elements?.[0]?.tags?.total || d.elements?.length || 0);
+
+    if (total === 0) {
+      // Nothing found — warn user and switch to 'any'
+      showTerrainWarning(terrain, terrainLabels[terrain], scanRadius);
+      S.terrain = 'any'; // fallback silently
+      // Update UI
+      document.querySelectorAll('[data-terrain]').forEach(c => c.classList.remove('sel'));
+      document.querySelector('[data-terrain="any"]')?.classList.add('sel');
+    } else {
+      toast(`✅ Znaleziono ${terrainLabels[terrain]} w promieniu ${Math.round(scanRadius)} km`);
+    }
+  } catch(e) {
+    console.warn('Terrain check failed:', e.message);
+    // Don't block generation on Overpass failure
+  }
+}
+
+function showTerrainWarning(terrain, label, radiusKm) {
+  const icons = { water:'💧', park:'🌳', city:'🏙️' };
+  const suggestions = {
+    water: 'Najbliższa woda może być dalej niż zasięg trasy. Możesz zwiększyć dystans lub wybrać "Dowolny" teren.',
+    park:  'W pobliżu nie wykryto parków ani lasów. Rozważ zwiększenie dystansu lub wybór "Dowolny".',
+    city:  'Brak oznakowaych ścieżek rowerowych/pieszych w okolicy. Trasa będzie prowadzić drogami.'
+  };
+
+  // Show inline warning in loading panel
+  const warn = document.createElement('div');
+  warn.style.cssText = 'background:var(--amber-pale);border:1px solid var(--amber);border-radius:var(--rsm);padding:10px 13px;font-size:12px;color:var(--amber);line-height:1.5;margin-top:8px;max-width:280px;text-align:left';
+  warn.innerHTML = `<strong>${icons[terrain]} Brak ${label}</strong> w promieniu ${Math.round(radiusKm)} km.<br>${suggestions[terrain]}<br><em>Generuję trasę dla "Dowolny" teren.</em>`;
+
+  const stepsEl = document.querySelector('.lo-steps');
+  if (stepsEl) {
+    // Remove previous warnings
+    stepsEl.querySelectorAll('.terrain-warn').forEach(e => e.remove());
+    warn.className = 'terrain-warn';
+    stepsEl.after(warn);
+    // Auto-remove after generation
+    setTimeout(() => warn.remove(), 8000);
+  }
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────
 async function generate() {
   const btn=$('gbtn'); btn.disabled=true;
   btn.innerHTML='<div class="sp"></div><span>Szukam…</span>';
-  for(let i=1;i<=4;i++){const s=$('ls'+i); if(s){s.classList.remove('done','cur');}} 
+  for(let i=1;i<=4;i++){const s=$('ls'+i); if(s){s.classList.remove('done','cur');}}
   $('ls1').classList.add('cur');
   $('loading').classList.add('on');
   showScreen('scr-routes');
   initMapRoutes();
 
   try {
-    stepDone(1); await dl(200);
-    $('los').textContent='Łączenie z routerem OSM…'; stepDone(2); await dl(300);
+    stepDone(1); await dl(150);
+
+    // Terrain scan — check if preferred terrain exists near user
+    if (S.terrain !== 'any') {
+      await checkTerrainAndWarn(S.lat, S.lng, S.dist, S.terrain);
+    }
+
+    $('los').textContent='Łączenie z routerem…'; stepDone(2); await dl(200);
     $('lot').textContent=`Obliczam ${S.variants} wariant${S.variants===1?'':'y'}…`;
-    $('los').textContent='GraphHopper → OSRM → fallback';
+    $('los').textContent='Valhalla → OSRM trip → fallback';
 
     const routes=[];
     for(let i=0;i<S.variants;i++){
@@ -606,7 +733,6 @@ async function generate() {
     if(!routes.length) throw new Error('Brak trasy. Sprawdź połączenie.');
     stepDone(3); S.routes=routes; S.activeIdx=0;
     await dl(200);
-    // Hide loading first, then renderRoutes shows screen and inits map
     $('loading').classList.remove('on');
     renderRoutes();
     stepDone(4); await dl(100);
@@ -709,12 +835,28 @@ function drawRouteLayers() {
 
   const active = S.routes[S.activeIdx];
   if (active && active.coords.length) {
-    const si = L.divIcon({ html: '<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>', iconAnchor:[8,8], className:'' });
-    const ei = L.divIcon({ html: '<div style="width:16px;height:16px;border-radius:50%;background:#D85A30;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>', iconAnchor:[8,8], className:'' });
-    S.layersR.push(L.marker(active.coords[0], {icon:si}).bindPopup('▶ Start').addTo(S.mapR));
-    S.layersR.push(L.marker(active.coords[active.coords.length-1], {icon:ei}).bindPopup('🏁 Meta').addTo(S.mapR));
+    const startLL = [S.lat, S.lng]; // always GPS position, not route[0]
+    const endLL   = active.coords[active.coords.length - 1];
 
-    const bounds = L.polyline(active.coords).getBounds();
+    const si = L.divIcon({ html:`
+      <div style="position:relative;width:24px;height:24px">
+        <div style="width:24px;height:24px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 8px rgba(55,138,221,.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:700">S</div>
+      </div>`, iconAnchor:[12,12], className:'' });
+    const ei = L.divIcon({ html:`
+      <div style="width:24px;height:24px;border-radius:50%;background:#D85A30;border:3px solid white;box-shadow:0 2px 8px rgba(216,90,48,.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:700">M</div>`,
+      iconAnchor:[12,12], className:'' });
+
+    S.layersR.push(L.marker(startLL, {icon:si}).bindPopup('▶ Start (Twoja lokalizacja)').addTo(S.mapR));
+
+    const loopEndDist = haversine(startLL[0],startLL[1],endLL[0],endLL[1])*1000;
+    if (loopEndDist > 100) { // show end marker only if truly different from start
+      S.layersR.push(L.marker(endLL, {icon:ei}).bindPopup('🏁 Meta').addTo(S.mapR));
+    }
+
+    // Accuracy circle around GPS start
+    S.layersR.push(L.circle(startLL, { radius: 30, color:'#378ADD', fillColor:'#378ADD', fillOpacity:0.12, weight:1 }).addTo(S.mapR));
+
+    const bounds = L.polyline(active.coords).getBounds().extend(startLL);
     S.mapR.fitBounds(bounds, { padding: [32, 32], animate: false });
     setTimeout(() => {
       S.mapR.invalidateSize(true);
