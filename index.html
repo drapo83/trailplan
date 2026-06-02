@@ -731,11 +731,14 @@ async function loadElevation(route) {
     drawElevationChart(elev);
   }
 }
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function toast(msg, dur=2600) {
   const t=$('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),dur);
 }
 
-// ── Screen management ────────────────────────────────────────────────────
+// ── Screen management ─────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen,.fullscreen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
