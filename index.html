@@ -200,6 +200,36 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 .leaflet-control-attribution{font-size:9px !important}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fu{animation:fadeUp .28s ease both}
+
+/* ── SETTINGS ── */
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:0.5px solid var(--border)}
+.settings-row:last-child{border:none}
+.sr-label{font-size:13px;font-weight:500;color:var(--text)}
+.sr-sub{font-size:11px;color:var(--text-3);margin-top:1px}
+.sr-val{font-size:13px;font-weight:600;color:var(--green);font-family:var(--mono)}
+.num-input{display:flex;align-items:center;gap:8px}
+.num-btn{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border-md);background:var(--surface-2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-2);font-family:var(--font);transition:all .15s}
+.num-btn:active{background:var(--green);color:white;border-color:var(--green)}
+.num-val{font-size:16px;font-weight:600;font-family:var(--mono);min-width:36px;text-align:center}
+.seg-ctrl{display:flex;border:1.5px solid var(--border-md);border-radius:var(--rsm);overflow:hidden}
+.seg-btn{flex:1;padding:6px 8px;font-size:11px;font-weight:500;font-family:var(--font);cursor:pointer;border:none;background:transparent;color:var(--text-3);transition:all .15s;white-space:nowrap}
+.seg-btn.act{background:var(--green);color:white}
+
+/* ── ELEVATION CHART ── */
+.elev-wrap{margin:0 16px 10px;background:var(--surface-2);border-radius:var(--r);overflow:hidden;border:0.5px solid var(--border)}
+.elev-header{display:flex;align-items:center;justify-content:space-between;padding:10px 13px 6px}
+.elev-title{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-3)}
+.elev-stats{display:flex;gap:12px}
+.elev-stat{font-size:11px;color:var(--text-3)}
+.elev-stat strong{color:var(--text);font-weight:600}
+.elev-canvas-wrap{padding:0 8px 8px;height:72px;position:relative}
+#elev-chart{width:100%;height:100%}
+.elev-loading{height:72px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-3)}
+
+/* ── VOICE indicator ── */
+.voice-ind{position:absolute;top:8px;right:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:4px 9px;font-size:11px;font-weight:500;color:var(--green);display:none;align-items:center;gap:4px;z-index:500}
+.voice-ind.show{display:flex}
+.voice-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1s infinite}
 </style>
 </head>
 <body>
@@ -218,6 +248,7 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
     <div class="gps-pill s" id="gps-pill" onclick="refreshGPS()">
       <div class="gdot p" id="gdot"></div><span id="glbl">GPS…</span>
     </div>
+    <div class="bo" style="flex:none;padding:6px 10px;font-size:16px;border-radius:var(--rsm);margin-left:6px" onclick="showScreen('scr-settings')" title="Ustawienia">⚙️</div>
   </div>
 
   <!-- ═══ SETUP ═══ -->
@@ -288,6 +319,71 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
     <div style="height:8px"></div>
   </div>
 
+  <!-- ═══ SETTINGS ═══ -->
+  <div class="screen" id="scr-settings" style="padding-bottom:calc(16px + var(--sab))">
+    <div class="map-header" style="margin-bottom:0">
+      <div class="back" onclick="showSetup()">←</div>
+      <div class="mhi"><div class="mht">Ustawienia profilu</div><div class="mhs">zapisywane automatycznie</div></div>
+    </div>
+    <div class="sec">
+      <div class="slbl">Dane osobowe</div>
+      <div class="settings-row">
+        <div><div class="sr-label">Waga</div><div class="sr-sub">Wpływa na obliczanie kalorii</div></div>
+        <div class="num-input">
+          <div class="num-btn" onclick="adjWeight(-1)">−</div>
+          <div class="num-val" id="prof-weight">75</div>
+          <div class="num-btn" onclick="adjWeight(1)">+</div>
+          <div style="font-size:12px;color:var(--text-3);margin-left:2px">kg</div>
+        </div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="slbl">Typ roweru</div>
+      <div class="mgrid" id="bike-type-grid">
+        <div class="mcard" data-bike="road" onclick="selBikeType('road',this)"><span class="micon">🚴</span><div class="mname">Szosowy</div><div class="mhint">Asfalt, wysoka prędkość</div></div>
+        <div class="mcard" data-bike="city" onclick="selBikeType('city',this)"><span class="micon">🚲</span><div class="mname">Miejski</div><div class="mhint">Chodniki, wolniej</div></div>
+        <div class="mcard" data-bike="mtb" onclick="selBikeType('mtb',this)"><span class="micon">🏔️</span><div class="mname">MTB</div><div class="mhint">Szuter, las, góry</div></div>
+        <div class="mcard" data-bike="gravel" onclick="selBikeType('gravel',this)"><span class="micon">🪨</span><div class="mname">Gravel</div><div class="mhint">Mix nawierzchni</div></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="slbl">Nawigacja głosowa</div>
+      <div class="settings-row">
+        <div><div class="sr-label">Komunikaty głosowe</div><div class="sr-sub">Dystans, czas, alerty</div></div>
+        <div class="tog" id="voice-tog" onclick="togVoice()"></div>
+      </div>
+      <div class="settings-row">
+        <div><div class="sr-label">Komunikat co</div><div class="sr-sub">Informacja o postępie</div></div>
+        <div class="seg-ctrl">
+          <button class="seg-btn act" data-km="1" onclick="selVoiceKm(1,this)">1 km</button>
+          <button class="seg-btn" data-km="2" onclick="selVoiceKm(2,this)">2 km</button>
+          <button class="seg-btn" data-km="5" onclick="selVoiceKm(5,this)">5 km</button>
+        </div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="slbl">Ekran</div>
+      <div class="settings-row">
+        <div><div class="sr-label">Ekran zawsze włączony</div><div class="sr-sub">Podczas aktywnej nawigacji</div></div>
+        <div class="tog" id="screen-tog" onclick="togScreenOn()"></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="slbl">Jednostki</div>
+      <div class="settings-row">
+        <div><div class="sr-label">Dystans</div></div>
+        <div class="seg-ctrl">
+          <button class="seg-btn act" data-u="km" onclick="selUnits('km',this)">km</button>
+          <button class="seg-btn" data-u="mi" onclick="selUnits('mi',this)">mile</button>
+        </div>
+      </div>
+    </div>
+    <div style="padding:16px;color:var(--text-3);font-size:12px;line-height:1.6">
+      <strong style="color:var(--text)">Kalorie</strong> liczone na podstawie wagi, dystansu i aktywności (MET).<br>
+      <strong style="color:var(--text)">Typ roweru</strong> wpływa na sugerowaną prędkość i routing.
+    </div>
+  </div>
+
   <!-- ═══ ROUTES + MAP ═══ -->
   <div class="fullscreen" id="scr-routes">
     <div class="map-header">
@@ -302,6 +398,13 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
     </div>
     <div class="rtabs" id="rtabs"></div>
     <div id="map-routes" style="flex:1;min-height:0;width:100%"></div>
+    <div class="elev-wrap" id="elev-wrap" style="display:none">
+      <div class="elev-header">
+        <div class="elev-title">Profil wysokości</div>
+        <div class="elev-stats" id="elev-stats"></div>
+      </div>
+      <div class="elev-canvas-wrap"><canvas id="elev-chart"></canvas></div>
+    </div>
     <div class="map-bottom">
       <div class="srow" id="srow"></div>
       <div class="brow">
@@ -333,7 +436,9 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
         <div class="lg"><div class="lv big coral" id="ln-kcal">0</div><div class="ll">kcal</div></div>
       </div>
     </div>
-    <div id="map-nav" style="flex:1;min-height:0;width:100%"></div>
+    <div id="map-nav" style="flex:1;min-height:0;width:100%;position:relative">
+      <div class="voice-ind" id="voice-ind"><div class="voice-dot"></div><span id="voice-text">🔊</span></div>
+    </div>
     <div class="nav-bottom">
       <div class="bo" style="flex:none;padding:10px 14px" onclick="centerOnUser()">📍</div>
       <div class="bo" onclick="openNavExternal()">🧭 Zewn. nawigacja</div>
@@ -385,16 +490,247 @@ const S = {
   lat:52.2297, lng:21.0122, locName:'Warszawa', locDetail:'',
   routes:[], activeIdx:0,
   mapR:null, mapN:null, layersR:[], layersN:[], posMarker:null,
-  nav: null
+  nav: null,
+  wakeLock: null,
+  voiceEnabled: true,
+  elevationData: null  // {coords:[[lat,lng,alt],...], profile:[{d,alt},...]}
 };
+
+// ── User profile (persisted in localStorage) ─────────────────────────────
+const P = (() => {
+  const DEFAULTS = {
+    weight: 75,           // kg
+    bikeType: 'road',     // road | mtb | city | gravel
+    units: 'km',          // km | mi
+    voiceAlerts: true,
+    screenOn: true
+  };
+  let data = {...DEFAULTS};
+  try { const s = localStorage.getItem('trailplan_profile'); if(s) data = {...DEFAULTS, ...JSON.parse(s)}; } catch(e){}
+  return {
+    get: k => data[k],
+    set: (k,v) => { data[k]=v; try{localStorage.setItem('trailplan_profile',JSON.stringify(data));}catch(e){} },
+    all: () => ({...data})
+  };
+})();
 
 const COLORS = ['#378ADD','#1D9E75','#EF9F27','#D85A30','#7F77DD'];
 const NAMES  = ['Wariant A','Wariant B','Wariant C','Wariant D','Wariant E'];
 const $ = id => document.getElementById(id);
 const fx = (n,d=1) => parseFloat(n.toFixed(d));
 
-// ── Toast ────────────────────────────────────────────────────────────────
-function toast(msg, dur=2600) {
+// ── Settings functions ────────────────────────────────────────────────────
+function initSettings() {
+  const w = P.get('weight');
+  $('prof-weight').textContent = w;
+  const bt = P.get('bikeType');
+  document.querySelectorAll('[data-bike]').forEach(el => el.classList.toggle('sel', el.dataset.bike === bt));
+  const vt = $('voice-tog'); vt.classList.toggle('on', P.get('voiceAlerts'));
+  const st = $('screen-tog'); st.classList.toggle('on', P.get('screenOn'));
+  const km = P.get('voiceKm') || 1;
+  document.querySelectorAll('[data-km]').forEach(b => b.classList.toggle('act', parseInt(b.dataset.km) === km));
+  const u = P.get('units');
+  document.querySelectorAll('[data-u]').forEach(b => b.classList.toggle('act', b.dataset.u === u));
+}
+
+function adjWeight(d) {
+  const w = Math.max(30, Math.min(200, (P.get('weight')||75) + d));
+  P.set('weight', w); $('prof-weight').textContent = w;
+}
+
+function selBikeType(type, el) {
+  P.set('bikeType', type);
+  document.querySelectorAll('[data-bike]').forEach(c => c.classList.remove('sel'));
+  el.classList.add('sel');
+  // Update mode hint based on bike type
+  if (type === 'mtb' || type === 'gravel') { S.pavedOnly = false; }
+}
+
+function togVoice() {
+  const v = !P.get('voiceAlerts'); P.set('voiceAlerts', v);
+  $('voice-tog').classList.toggle('on', v);
+  S.voiceEnabled = v;
+  toast(v ? '🔊 Komunikaty głosowe włączone' : '🔇 Komunikaty głosowe wyłączone');
+}
+
+function selVoiceKm(km, el) {
+  P.set('voiceKm', km);
+  document.querySelectorAll('[data-km]').forEach(b => b.classList.toggle('act', parseInt(b.dataset.km) === km));
+}
+
+function togScreenOn() {
+  const v = !P.get('screenOn'); P.set('screenOn', v);
+  $('screen-tog').classList.toggle('on', v);
+  toast(v ? '📱 Ekran będzie włączony podczas nawigacji' : '📱 Ekran normalny tryb oszczędzania');
+}
+
+function selUnits(u, el) {
+  P.set('units', u);
+  document.querySelectorAll('[data-u]').forEach(b => b.classList.toggle('act', b.dataset.u === u));
+  toast(u === 'km' ? 'Jednostki: kilometry' : 'Jednostki: mile');
+}
+
+// ── Calorie calculator with weight (MET-based) ────────────────────────────
+function calcKcal(distKm, mode) {
+  const weight = P.get('weight') || 75;
+  const bikeType = P.get('bikeType') || 'road';
+  // MET values: bike road=8, city=6, mtb=10, gravel=9; walking=3.5, hiking=5
+  const MET = mode === 'bike'
+    ? { road:8, city:6, mtb:10, gravel:9 }[bikeType] || 8
+    : 4.0;
+  // Speed assumptions for time calc
+  const speedKmh = mode === 'bike'
+    ? { road:22, city:14, mtb:16, gravel:18 }[bikeType] || 18
+    : 5;
+  const hours = distKm / speedKmh;
+  return Math.round(MET * weight * hours);
+}
+
+// ── Wake Lock (keep screen on during navigation) ───────────────────────────
+async function acquireWakeLock() {
+  if (!P.get('screenOn')) return;
+  if (!('wakeLock' in navigator)) { toast('⚠️ Wake Lock niedostępny w tej przeglądarce'); return; }
+  try {
+    S.wakeLock = await navigator.wakeLock.request('screen');
+    S.wakeLock.addEventListener('release', () => { S.wakeLock = null; });
+  } catch(e) { console.warn('Wake lock:', e.message); }
+}
+
+function releaseWakeLock() {
+  if (S.wakeLock) { S.wakeLock.release().catch(()=>{}); S.wakeLock = null; }
+}
+
+// Re-acquire after tab switch back
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.nav) acquireWakeLock();
+});
+
+// ── Voice alerts (Web Speech API) ─────────────────────────────────────────
+let lastVoiceKm = 0;
+
+function speak(text) {
+  if (!P.get('voiceAlerts')) return;
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'pl-PL'; u.rate = 1.05; u.pitch = 1;
+  // Try to find Polish voice
+  const voices = window.speechSynthesis.getVoices();
+  const plVoice = voices.find(v => v.lang.startsWith('pl')) || voices.find(v => v.lang.startsWith('en'));
+  if (plVoice) u.voice = plVoice;
+  window.speechSynthesis.speak(u);
+  // Show visual indicator
+  const ind = $('voice-ind'), txt = $('voice-text');
+  if (ind && txt) { txt.textContent = '🔊 ' + text.slice(0,30); ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 3000); }
+}
+
+function checkVoiceAlerts(distKm, remainKm, spdKmh) {
+  const interval = P.get('voiceKm') || 1;
+  const milestone = Math.floor(distKm / interval) * interval;
+  if (milestone > 0 && milestone > lastVoiceKm) {
+    lastVoiceKm = milestone;
+    const min = Math.round(remainKm / Math.max(spdKmh, 1) * 60);
+    speak(`Przejechano ${milestone} kilometrów. Pozostało około ${Math.round(remainKm)} kilometrów.`);
+  }
+  // Alert at 1km to finish
+  if (remainKm < 1 && remainKm > 0 && lastVoiceKm !== -1) {
+    lastVoiceKm = -1;
+    speak('Zbliżasz się do mety! Jeszcze niecały kilometr.');
+  }
+}
+
+// ── Elevation profile (Overpass + Open Elevation fallback) ────────────────
+async function fetchElevationProfile(coords) {
+  // Sample every ~200m for performance
+  const step = Math.max(1, Math.floor(coords.length / 80));
+  const sampled = coords.filter((_, i) => i % step === 0);
+  if (sampled.length < 2) return null;
+
+  try {
+    // Open-Elevation API (free, no key)
+    const locations = sampled.map(([la,ln]) => ({latitude:la,longitude:ln}));
+    const r = await fetch('https://api.open-elevation.com/api/v1/lookup', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({locations}),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) throw new Error('elev ' + r.status);
+    const d = await r.json();
+    if (!d.results?.length) throw new Error('no results');
+
+    // Build profile: cumulative distance vs altitude
+    let cumDist = 0;
+    const profile = [];
+    let minAlt = Infinity, maxAlt = -Infinity, gain = 0, loss = 0;
+    d.results.forEach((pt, i) => {
+      if (i > 0) {
+        const prev = sampled[i-1], curr = sampled[i];
+        cumDist += haversine(prev[0],prev[1],curr[0],curr[1]);
+        const dAlt = pt.elevation - d.results[i-1].elevation;
+        if (dAlt > 0) gain += dAlt; else loss += Math.abs(dAlt);
+      }
+      const alt = pt.elevation;
+      minAlt = Math.min(minAlt, alt); maxAlt = Math.max(maxAlt, alt);
+      profile.push({ d: fx(cumDist,2), alt: Math.round(alt) });
+    });
+    return { profile, minAlt:Math.round(minAlt), maxAlt:Math.round(maxAlt), gain:Math.round(gain), loss:Math.round(loss) };
+  } catch(e) {
+    console.warn('Elevation:', e.message);
+    return null;
+  }
+}
+
+function drawElevationChart(elev) {
+  const canvas = $('elev-chart');
+  if (!canvas || !elev?.profile?.length) return;
+  const wrap = canvas.parentElement;
+  const w = wrap.offsetWidth || 320, h = 64;
+  canvas.width = w * (window.devicePixelRatio||1);
+  canvas.height = h * (window.devicePixelRatio||1);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio||1, window.devicePixelRatio||1);
+
+  const isDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
+  const pts = elev.profile;
+  const maxD = pts[pts.length-1].d;
+  const pad = 4;
+  const altRange = Math.max(elev.maxAlt - elev.minAlt, 10);
+
+  const px = d => pad + (d/maxD)*(w-pad*2);
+  const py = a => h - pad - ((a-elev.minAlt)/altRange)*(h-pad*2);
+
+  // Fill
+  ctx.beginPath(); ctx.moveTo(px(pts[0].d), py(pts[0].alt));
+  pts.forEach(p => ctx.lineTo(px(p.d), py(p.alt)));
+  ctx.lineTo(px(pts[pts.length-1].d), h); ctx.lineTo(px(pts[0].d), h); ctx.closePath();
+  const grad = ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0, isDark?'rgba(61,201,154,0.35)':'rgba(29,158,117,0.25)');
+  grad.addColorStop(1, isDark?'rgba(61,201,154,0.0)':'rgba(29,158,117,0.0)');
+  ctx.fillStyle = grad; ctx.fill();
+
+  // Line
+  ctx.beginPath(); ctx.moveTo(px(pts[0].d), py(pts[0].alt));
+  pts.forEach(p => ctx.lineTo(px(p.d), py(p.alt)));
+  ctx.strokeStyle = isDark?'#3DC99A':'#1D9E75'; ctx.lineWidth = 2; ctx.lineJoin='round'; ctx.stroke();
+
+  // Stats
+  $('elev-stats').innerHTML = `
+    <div class="elev-stat">↑<strong>${elev.gain}m</strong></div>
+    <div class="elev-stat">↓<strong>${elev.loss}m</strong></div>
+    <div class="elev-stat"><strong>${elev.minAlt}–${elev.maxAlt}m</strong></div>`;
+  $('elev-wrap').style.display = 'block';
+}
+
+async function loadElevation(route) {
+  $('elev-wrap').style.display = 'none';
+  if (!route?.coords?.length) return;
+  const elev = await fetchElevationProfile(route.coords);
+  if (elev) {
+    S.elevationData = elev;
+    drawElevationChart(elev);
+  }
+}
   const t=$('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),dur);
 }
@@ -849,6 +1185,8 @@ function renderRoutes() {
   $('mhs').textContent = `${S.locName} · ${S.routes.length} wariant${S.routes.length===1?'':'y'}`;
   document.querySelectorAll('.tile-btn').forEach(b =>
     b.classList.toggle('act', b.dataset.tile === currentTile));
+  // Load elevation for active route (async, non-blocking)
+  loadElevation(S.routes[0]);
   // Let browser paint screen first, then init map
   requestAnimationFrame(() => requestAnimationFrame(() => initMapRoutes()));
 }
@@ -915,14 +1253,19 @@ function switchRoute(idx){
   S.activeIdx=idx;
   renderTabs(); updateStats();
   drawRouteLayers();
+  loadElevation(S.routes[idx]);
 }
 
 function updateStats(){
   const r=S.routes[S.activeIdx]; if(!r) return;
-  const spd=S.mode==='bike'?18:5;
-  const kcal=S.mode==='bike'?Math.round(r.distKm*35):Math.round(r.distKm*65);
+  const bikeSpd = { road:22, city:14, mtb:16, gravel:18 }[P.get('bikeType')||'road'] || 18;
+  const spd = S.mode==='bike' ? bikeSpd : 5;
+  const kcal = calcKcal(r.distKm, S.mode);
+  const u = P.get('units') === 'mi';
+  const dist = u ? fx(r.distKm*0.621,1) : r.distKm;
+  const distUnit = u ? 'mi' : 'km';
   $('srow').innerHTML=`
-    <div class="sr"><div class="rv">${r.distKm}</div><div class="rl">km</div></div>
+    <div class="sr"><div class="rv">${dist}</div><div class="rl">${distUnit}</div></div>
     <div class="sr"><div class="rv">${r.durationMin}</div><div class="rl">min</div></div>
     <div class="sr"><div class="rv">${fx(r.distKm/spd,1)}</div><div class="rl">godz.</div></div>
     <div class="sr"><div class="rv">~${kcal}</div><div class="rl">kcal</div></div>`;
@@ -970,19 +1313,23 @@ function startNav() {
   $('nav-route-name').textContent = r.name + ' · ' + r.distKm + ' km';
   document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
 
+  lastVoiceKm = 0;
+  S.voiceEnabled = P.get('voiceAlerts');
+  acquireWakeLock();
+
   S.nav = {
     startTime: null,
     dist: 0,
     lastPos: null,
     lastPosTime: null,
     lastSpd: 0,
-    movingSeconds: 0,       // time actually moving (for true avg speed)
-    lastMovingTick: null,   // timestamp of last moving tick
+    movingSeconds: 0,
+    lastMovingTick: null,
     timer: null,
     watchId: null,
     speedHistory: [],
     maxSpd: 0,
-    kcalPerKm: S.mode==='bike' ? 35 : 65,
+    kcalPerKm: calcKcal(1, S.mode), // per-km with user weight
     route: r,
     gpsReady: false
   };
@@ -1092,11 +1439,17 @@ function navTick() {
 
   // Current speed — show 0.0 when stationary
   const curSpd = fx(n.lastSpd, 1);
+  const remainKm = Math.max(0, fx((n.route.distKm||0) - distKm, 1));
 
   $('ln-spd').textContent = curSpd.toFixed(1);
   $('ln-dist').textContent = distKm.toFixed(2);
   $('ln-time').textContent = mm + ':' + ss;
   $('ln-kcal').textContent = kcal;
+
+  // Voice alert check every 10s (not every tick for performance)
+  if (elapsed % 10 === 0 && distKm > 0) {
+    checkVoiceAlerts(distKm, remainKm, curSpd);
+  }
 }
 
 function centerOnUser() {
@@ -1115,12 +1468,14 @@ function openNavExternal() {
 }
 
 function stopNav() {
-  const n=S.nav; if(!n) return;
+  const n = S.nav; if (!n) return;
   clearInterval(n.timer);
-  if(n.watchId!=null) navigator.geolocation.clearWatch(n.watchId);
-  if(S.posMarker){ S.mapN.removeLayer(S.posMarker); S.posMarker=null; }
+  if (n.watchId != null) navigator.geolocation.clearWatch(n.watchId);
+  if (S.posMarker){ S.mapN.removeLayer(S.posMarker); S.posMarker = null; }
+  releaseWakeLock();
+  window.speechSynthesis?.cancel();
   showSummary(n);
-  S.nav=null;
+  S.nav = null;
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────
@@ -1221,8 +1576,12 @@ let deferredPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
 
 // ── Boot ──────────────────────────────────────────────────────────────────
-const urlMode=new URLSearchParams(location.search).get('mode');
-if(urlMode==='hike') selMode('hike',document.querySelector('[data-mode="hike"]'));
+const urlMode = new URLSearchParams(location.search).get('mode');
+if (urlMode === 'hike') selMode('hike', document.querySelector('[data-mode="hike"]'));
+initSettings();
+S.voiceEnabled = P.get('voiceAlerts');
+// Preload voices for speech synthesis
+if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
 refreshGPS();
 </script>
 </body>
