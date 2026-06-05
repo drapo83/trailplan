@@ -45,7 +45,7 @@ html{height:100%;height:-webkit-fill-available}
 body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hidden;font-family:var(--font);background:var(--surface);color:var(--text)}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:-webkit-fill-available;width:100%;max-width:430px;margin:0 auto;position:relative;overflow:hidden}
 
-/* topbar */
+/* ── TOPBAR (hidden when hero is shown on setup screen) ── */
 .status-bar{padding-top:var(--sat);background:var(--surface);flex-shrink:0}
 .topbar{display:flex;align-items:center;gap:10px;padding:11px 16px 9px;border-bottom:0.5px solid var(--border);background:var(--surface);flex-shrink:0}
 .logo{width:32px;height:32px;background:var(--green);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -58,6 +58,32 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 .gdot{width:6px;height:6px;border-radius:50%;background:currentColor}
 .gdot.p{animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+/* ── HERO HEADER (setup screen) ── */
+.hero-header{background:linear-gradient(160deg,var(--green-dark) 0%,var(--green) 100%);padding:14px 16px 20px;flex-shrink:0;position:relative;overflow:hidden}
+.hero-header::before{content:'';position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.06);pointer-events:none}
+.hero-header::after{content:'';position:absolute;bottom:-15px;left:15px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none}
+.hero-toprow{display:flex;align-items:center;gap:10px;margin-bottom:16px;position:relative;z-index:1}
+.hero-logo{width:32px;height:32px;background:rgba(255,255,255,.18);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:0.5px solid rgba(255,255,255,.25)}
+.hero-logo svg{width:19px;height:19px}
+.hero-appname{font-size:15px;font-weight:600;color:#fff;letter-spacing:-.01em}
+.hero-appsub{font-size:10px;color:rgba(255,255,255,.6)}
+.hero-gps{margin-left:auto;display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);font-size:11px;font-weight:500;color:#fff;border:0.5px solid rgba(255,255,255,.25);cursor:pointer}
+.hero-gps.s{background:rgba(239,159,39,.25);border-color:rgba(239,159,39,.5)}
+.hero-gps.e{background:rgba(216,90,48,.25);border-color:rgba(216,90,48,.5)}
+.hero-dist-label{font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:4px;position:relative;z-index:1}
+.hero-dist-row{display:flex;align-items:baseline;gap:4px;position:relative;z-index:1}
+.hero-dist-val{font-size:52px;font-weight:200;color:#fff;line-height:1;letter-spacing:-3px;font-family:var(--mono)}
+.hero-dist-unit{font-size:16px;color:rgba(255,255,255,.65);font-weight:400}
+.hero-slider-wrap{margin-top:12px;position:relative;z-index:1}
+.hero-slider{width:100%;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:rgba(255,255,255,.2);outline:none}
+.hero-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 6px rgba(0,0,0,.25);cursor:pointer}
+.hero-slider::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:none;cursor:pointer}
+.hero-presets{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.hero-preset{font-size:11px;font-weight:500;padding:4px 11px;border:1px solid rgba(255,255,255,.2);border-radius:20px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.7);cursor:pointer;transition:all .15s;font-family:var(--font)}
+.hero-preset:active{transform:scale(.95)}
+.hero-preset.act{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.45);color:#fff}
+.hero-settings-btn{position:absolute;bottom:16px;right:16px;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.15);border:0.5px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:1;font-size:14px}
 
 /* screens */
 .screen{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:none;flex-direction:column}
@@ -141,24 +167,40 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 .bp:active{transform:scale(.98);background:var(--green-dark)}
 
 /* ── ACTIVE NAV ── */
-#map-nav{width:100%;flex:1;min-height:0}
-.nav-top{background:var(--surface);border-bottom:0.5px solid var(--border);flex-shrink:0;padding:10px 14px 0}
-.nav-top-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.nav-status{flex:1}
-.nav-status .ns-label{font-size:11px;color:var(--text-3);font-weight:500;text-transform:uppercase;letter-spacing:.06em}
-.nav-status .ns-val{font-size:15px;font-weight:600;color:var(--text);margin-top:1px}
-.stop-btn{background:var(--coral-pale);color:var(--coral);border:1px solid var(--coral);border-radius:var(--r);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);flex-shrink:0}
+#map-nav{width:100%;flex:1;min-height:0;position:relative}
+.nav-top{background:var(--surface);border-bottom:0.5px solid var(--border);flex-shrink:0;padding:8px 12px 0}
+.nav-top-row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.nav-route-badge{flex:1;min-width:0;background:var(--green-pale);color:var(--green-dark);font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-tile-row{display:flex;gap:3px;flex-shrink:0}
+.stop-btn{background:var(--coral-pale);color:var(--coral);border:1px solid var(--coral);border-radius:var(--rsm);padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);flex-shrink:0}
 .live-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--surface-2);border-radius:var(--r) var(--r) 0 0;overflow:hidden;border:0.5px solid var(--border);border-bottom:none}
-.lg{padding:9px 6px 8px;text-align:center;border-right:0.5px solid var(--border)}
+.lg{padding:8px 4px 6px;text-align:center;border-right:0.5px solid var(--border)}
 .lg:last-child{border:none}
-.lg .lv{font-size:16px;font-weight:700;font-family:var(--mono);line-height:1}
-.lg .lv.big{font-size:22px}
-.lg .ll{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-top:2px}
-.lg .lv.green{color:var(--green)}
-.lg .lv.amber{color:var(--amber)}
-.lg .lv.blue{color:var(--blue)}
-.lg .lv.coral{color:var(--coral)}
-.nav-bottom{background:var(--surface);border-top:0.5px solid var(--border);padding:10px 14px calc(10px + var(--sab));flex-shrink:0;display:flex;gap:8px}
+.lg .lv{font-size:14px;font-weight:700;font-family:var(--mono);line-height:1}
+.lg .lv.big{font-size:20px}
+.lg .ll{font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-top:2px}
+.lg .lv.green{color:var(--green)}.lg .lv.amber{color:var(--amber)}.lg .lv.blue{color:var(--blue)}.lg .lv.coral{color:var(--coral)}
+.lg .lv.paused{color:var(--amber);animation:blink .9s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.nav-bottom{background:var(--surface);border-top:0.5px solid var(--border);padding:8px 12px calc(8px + var(--sab));flex-shrink:0;display:flex;gap:8px;align-items:center}
+.nav-status-pill{flex:none;display:flex;align-items:center;gap:5px;padding:6px 11px;border-radius:20px;background:var(--green-pale);color:var(--green-dark);font-size:11px;font-weight:600;border:0.5px solid var(--green-light)}
+.nav-status-pill.paused{background:var(--amber-pale);color:var(--amber);border-color:var(--amber)}
+.nav-status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.nav-status-dot.pulse{animation:pulse 1.2s infinite}
+
+/* ── PAUSE OVERLAY ── */
+.pause-overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:200;padding:20px}
+.pause-overlay.show{display:flex}
+.pause-card{background:var(--surface);border-radius:var(--rlg);padding:22px 20px;width:100%;max-width:280px;text-align:center}
+.pause-icon{font-size:40px;margin-bottom:8px;display:block}
+.pause-title{font-size:17px;font-weight:600;color:var(--text);margin-bottom:4px}
+.pause-sub{font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px}
+.pause-stop-timer{font-size:32px;font-weight:300;font-family:var(--mono);color:var(--amber);margin-bottom:14px;line-height:1}
+.pause-stop-label{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px}
+.pause-btns{display:flex;gap:8px;width:100%}
+.pause-btn-cont{flex:2;padding:13px;border-radius:var(--r);background:var(--green);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)}
+.pause-btn-cont:active{background:var(--green-dark)}
+.pause-btn-end{flex:1;padding:13px;border-radius:var(--r);background:var(--surface-2);color:var(--coral);border:1.5px solid var(--coral);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font)}
 
 /* ── SUMMARY ── */
 .summary-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 calc(16px + var(--sab))}
@@ -234,45 +276,49 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
 </head>
 <body>
 <div id="app">
-  <div class="status-bar"></div>
-  <div class="topbar">
-    <div class="logo">
-      <svg viewBox="0 0 20 20" fill="none">
-        <circle cx="4" cy="14" r="2.5" fill="white"/>
-        <circle cx="16" cy="6" r="2.5" fill="white" opacity=".7"/>
-        <circle cx="10" cy="17" r="2" fill="white" opacity=".5"/>
-        <polyline points="4,14 8,8 13,11 16,6" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      </svg>
-    </div>
-    <div><div class="app-name">TrailPlan</div><div class="app-sub">Planer tras</div></div>
-    <div class="gps-pill s" id="gps-pill" onclick="refreshGPS()">
-      <div class="gdot p" id="gdot"></div><span id="glbl">GPS…</span>
-    </div>
-    <div class="bo" style="flex:none;padding:6px 10px;font-size:16px;border-radius:var(--rsm);margin-left:6px" onclick="showScreen('scr-settings')" title="Ustawienia">⚙️</div>
-  </div>
+  <div class="status-bar" id="status-bar"></div>
 
   <!-- ═══ SETUP ═══ -->
-  <div class="screen active" id="scr-setup">
+  <div class="screen active" id="scr-setup" style="padding-bottom:calc(16px + var(--sab))">
+    <!-- Hero header replaces topbar on setup screen -->
+    <div class="hero-header">
+      <div class="hero-toprow">
+        <div class="hero-logo">
+          <svg viewBox="0 0 20 20" fill="none">
+            <circle cx="4" cy="14" r="2.5" fill="white"/>
+            <circle cx="16" cy="6" r="2.5" fill="white" opacity=".7"/>
+            <circle cx="10" cy="17" r="2" fill="white" opacity=".5"/>
+            <polyline points="4,14 8,8 13,11 16,6" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+        <div><div class="hero-appname">TrailPlan</div><div class="hero-appsub">Planer tras</div></div>
+        <div class="hero-gps s" id="gps-pill" onclick="refreshGPS()">
+          <div class="gdot p" id="gdot"></div><span id="glbl">GPS…</span>
+        </div>
+      </div>
+      <div class="hero-dist-label">Planowany dystans</div>
+      <div class="hero-dist-row">
+        <span class="hero-dist-val" id="dval">20</span>
+        <span class="hero-dist-unit">km</span>
+      </div>
+      <div class="hero-slider-wrap">
+        <input type="range" class="hero-slider" id="dslider" min="2" max="150" value="20" step="1" oninput="updDist(this.value)">
+      </div>
+      <div class="hero-presets">
+        <button class="hero-preset" onclick="setPre(5)">5 km</button>
+        <button class="hero-preset" onclick="setPre(10)">10 km</button>
+        <button class="hero-preset act" onclick="setPre(20)">20 km</button>
+        <button class="hero-preset" onclick="setPre(30)">30 km</button>
+        <button class="hero-preset" onclick="setPre(50)">50 km</button>
+        <button class="hero-preset" onclick="setPre(100)">100 km</button>
+      </div>
+      <div class="hero-settings-btn" onclick="showScreen('scr-settings')" title="Ustawienia">⚙️</div>
+    </div>
     <div class="sec">
       <div class="slbl">Aktywność</div>
       <div class="mgrid">
         <div class="mcard sel" data-mode="bike" onclick="selMode('bike',this)"><span class="micon">🚴</span><div class="mname">Rower</div><div class="mhint">Ścieżki rowerowe, trasy EuroVelo</div></div>
         <div class="mcard" data-mode="hike" onclick="selMode('hike',this)"><span class="micon">🥾</span><div class="mname">Pieszo</div><div class="mhint">Szlaki, parki, promenady</div></div>
-      </div>
-    </div>
-    <div class="sec">
-      <div class="slbl">Planowany dystans</div>
-      <div class="drow">
-        <div class="ddisp"><div class="dval" id="dval">20</div><div class="dunit">km</div></div>
-        <input type="range" class="dslider" id="dslider" min="2" max="150" value="20" step="1" oninput="updDist(this.value)" style="flex:1">
-      </div>
-      <div class="presets">
-        <button class="preset" onclick="setPre(5)">5 km</button>
-        <button class="preset" onclick="setPre(10)">10 km</button>
-        <button class="preset act" onclick="setPre(20)">20 km</button>
-        <button class="preset" onclick="setPre(30)">30 km</button>
-        <button class="preset" onclick="setPre(50)">50 km</button>
-        <button class="preset" onclick="setPre(100)">100 km</button>
       </div>
     </div>
     <div class="sec">
@@ -418,31 +464,45 @@ body{height:100%;min-height:100vh;min-height:-webkit-fill-available;overflow:hid
   <div class="fullscreen" id="scr-nav">
     <div class="nav-top">
       <div class="nav-top-row">
-        <div class="nav-status">
-          <div class="ns-label">Trasa aktywna</div>
-          <div class="ns-val" id="nav-route-name">—</div>
+        <div class="nav-route-badge" id="nav-route-name">—</div>
+        <div class="nav-tile-row">
+          <div class="tile-btn bo" data-tile="google" style="flex:none;padding:4px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'google')">G</div>
+          <div class="tile-btn bo" data-tile="satellite" style="flex:none;padding:4px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'satellite')">🛰</div>
+          <div class="tile-btn bo" data-tile="osm" style="flex:none;padding:4px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'osm')">OSM</div>
         </div>
-        <div style="display:flex;gap:4px">
-          <div class="tile-btn bo" data-tile="google" style="flex:none;padding:5px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'google')">G</div>
-          <div class="tile-btn bo" data-tile="satellite" style="flex:none;padding:5px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'satellite')">🛰</div>
-          <div class="tile-btn bo" data-tile="osm" style="flex:none;padding:5px 7px;font-size:11px;border-radius:var(--rsm)" onclick="switchTile(S.mapN,'osm')">OSM</div>
-        </div>
-        <button class="stop-btn" onclick="stopNav()">⏹ Zakończ</button>
+        <button class="stop-btn" onclick="stopNav()">⏹</button>
       </div>
       <div class="live-grid">
-        <div class="lg"><div class="lv big green" id="ln-spd">0.0</div><div class="ll">km/h</div></div>
-        <div class="lg"><div class="lv big" id="ln-dist">0.00</div><div class="ll">km przej.</div></div>
-        <div class="lg"><div class="lv big amber" id="ln-time">00:00</div><div class="ll">czas</div></div>
-        <div class="lg"><div class="lv big coral" id="ln-kcal">0</div><div class="ll">kcal</div></div>
+        <div class="lg"><div class="lv big green" id="ln-spd">—</div><div class="ll">km/h</div></div>
+        <div class="lg"><div class="lv big blue" id="ln-dist">—</div><div class="ll">km</div></div>
+        <div class="lg"><div class="lv big amber" id="ln-time">—</div><div class="ll">czas</div></div>
+        <div class="lg"><div class="lv big coral" id="ln-kcal">—</div><div class="ll">kcal</div></div>
       </div>
     </div>
     <div id="map-nav" style="flex:1;min-height:0;width:100%;position:relative">
       <div class="voice-ind" id="voice-ind"><div class="voice-dot"></div><span id="voice-text">🔊</span></div>
+      <!-- Pause overlay for hike long-stop -->
+      <div class="pause-overlay" id="pause-overlay">
+        <div class="pause-card">
+          <span class="pause-icon">⏸️</span>
+          <div class="pause-title" id="pause-title">Zatrzymanie</div>
+          <div class="pause-sub" id="pause-sub">Stoisz w miejscu</div>
+          <div class="pause-stop-timer" id="pause-stop-timer">0:00</div>
+          <div class="pause-stop-label">czas zatrzymania</div>
+          <div class="pause-btns">
+            <button class="pause-btn-cont" onclick="resumeFromPause()">▶ Kontynuuj</button>
+            <button class="pause-btn-end" onclick="stopNav()">Zakończ</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="nav-bottom">
-      <div class="bo" style="flex:none;padding:10px 14px" onclick="centerOnUser()">📍</div>
-      <div class="bo" onclick="openNavExternal()">🧭 Zewn. nawigacja</div>
-      <div class="bp" style="flex:none;padding:10px 16px" onclick="stopNav()">⏹</div>
+      <div class="nav-status-pill" id="nav-status-pill">
+        <div class="nav-status-dot pulse"></div>
+        <span id="nav-status-text">Aktywna</span>
+      </div>
+      <div class="bo" style="flex:none;padding:8px 12px;font-size:13px" onclick="centerOnUser()">📍</div>
+      <div class="bo" style="flex:1" onclick="openNavExternal()">🧭 Zewn.</div>
     </div>
   </div>
 
@@ -1290,169 +1350,233 @@ function startNav() {
   const r = S.routes[S.activeIdx]; if (!r) return;
   showScreen('scr-nav');
 
-  // Init map after screen is visible
   setTimeout(() => {
     initMapNav();
-
-    // Draw route on nav map after map is ready
     setTimeout(() => {
       S.layersN.forEach(l => S.mapN.removeLayer(l)); S.layersN = [];
-
-      const line = L.polyline(r.coords, {color: r.color, weight: 6, opacity: 1, lineCap: 'round', lineJoin: 'round'}).addTo(S.mapN);
+      const line = L.polyline(r.coords, {color:r.color, weight:6, opacity:1, lineCap:'round', lineJoin:'round'}).addTo(S.mapN);
       S.layersN.push(line);
-
-      const si = L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',iconAnchor:[8,8],className:''});
+      const si = L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:white">S</div>',iconAnchor:[8,8],className:''});
       const ei = L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#D85A30;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',iconAnchor:[8,8],className:''});
-      S.layersN.push(L.marker(r.coords[0], {icon:si}).bindPopup('▶ Start').addTo(S.mapN));
-      S.layersN.push(L.marker(r.coords[r.coords.length-1], {icon:ei}).bindPopup('🏁 Meta').addTo(S.mapN));
-
+      S.layersN.push(L.marker(r.coords[0],{icon:si}).addTo(S.mapN));
+      S.layersN.push(L.marker(r.coords[r.coords.length-1],{icon:ei}).addTo(S.mapN));
       S.mapN.invalidateSize();
-      S.mapN.fitBounds(line.getBounds(), {padding: [40, 40]});
-      // Re-fit after full render
-      setTimeout(() => { S.mapN.invalidateSize(); S.mapN.fitBounds(line.getBounds(), {padding:[40,40]}); }, 400);
+      S.mapN.fitBounds(line.getBounds(),{padding:[40,40]});
+      setTimeout(()=>{S.mapN.invalidateSize();S.mapN.fitBounds(line.getBounds(),{padding:[40,40]});},400);
     }, 120);
   }, 80);
 
   $('nav-route-name').textContent = r.name + ' · ' + r.distKm + ' km';
   document.querySelectorAll('.tile-btn').forEach(b => b.classList.toggle('act', b.dataset.tile === currentTile));
-
   lastVoiceKm = 0;
   S.voiceEnabled = P.get('voiceAlerts');
   acquireWakeLock();
 
   S.nav = {
-    startTime: null,
-    dist: 0,
-    lastPos: null,
-    lastPosTime: null,
-    lastSpd: 0,
-    movingSeconds: 0,
-    lastMovingTick: null,
-    timer: null,
-    watchId: null,
-    speedHistory: [],
-    maxSpd: 0,
-    kcalPerKm: calcKcal(1, S.mode), // per-km with user weight
-    route: r,
-    gpsReady: false
+    startTime: null, dist: 0,
+    lastPos: null, lastPosTime: null, lastSpd: 0,
+    movingSeconds: 0, timer: null, watchId: null,
+    speedHistory: [], maxSpd: 0,
+    kcalPerKm: calcKcal(1, S.mode),
+    route: r, gpsReady: false,
+    // Pause state
+    paused: false,
+    stopStartTime: null,   // when user stopped moving
+    stopSeconds: 0,        // current stop duration
+    totalStopSeconds: 0,   // accumulated stops (hike summary)
+    isBike: S.mode === 'bike'
   };
 
-  // Show waiting state
-  $('ln-spd').textContent = '—';
-  $('ln-dist').textContent = '—';
-  $('ln-time').textContent = '—:—';
-  $('ln-kcal').textContent = '—';
+  $('ln-spd').textContent='…'; $('ln-dist').textContent='…';
+  $('ln-time').textContent='…'; $('ln-kcal').textContent='…';
+  hidePauseOverlay();
+  setNavStatus('waiting');
 
-  if (!navigator.geolocation) {
-    toast('⚠️ GPS niedostępny na tym urządzeniu');
-    return;
-  }
-
-  // Start watching position
-  S.nav.watchId = navigator.geolocation.watchPosition(
-    onNavPos,
-    (err) => { toast('⚠️ Błąd GPS: ' + (err.code === 1 ? 'brak uprawnień' : 'brak sygnału')); },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-  );
-
-  // Timer only updates display — no counting without GPS
+  if (!navigator.geolocation) { toast('⚠️ GPS niedostępny'); return; }
+  S.nav.watchId = navigator.geolocation.watchPosition(onNavPos,
+    err => toast('⚠️ GPS: ' + (err.code===1?'brak uprawnień':'brak sygnału')),
+    {enableHighAccuracy:true, maximumAge:0, timeout:15000});
   S.nav.timer = setInterval(navTick, 1000);
 }
 
-function onNavPos(pos) {
-  const { latitude: lat, longitude: lng, speed, accuracy } = pos.coords;
-  const n = S.nav;
-  if (!n) return;
+// Thresholds for hike stop overlay
+const HIKE_WARN_SEC  = 30;   // show overlay after 30s standing
+const HIKE_PAUSE_SEC = 120;  // emphasise "end?" after 2min standing
 
-  // First fix — start the clock and mark GPS as ready
+function onNavPos(pos) {
+  const {latitude:lat, longitude:lng, speed} = pos.coords;
+  const n = S.nav; if (!n) return;
+
   if (!n.gpsReady) {
     n.gpsReady = true;
     n.startTime = Date.now();
     n.lastPos = [lat, lng];
     n.lastPosTime = Date.now();
     toast('📍 GPS gotowy — startujemy!');
+    setNavStatus('active');
   }
 
-  // Update position marker on map
-  const pos2 = [lat, lng];
+  // Position marker
   if (!S.posMarker) {
-    const ui = L.divIcon({ html: '<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;border:3px solid white;box-shadow:0 2px 8px rgba(29,158,117,.6)"></div>', iconAnchor:[9,9], className:'' });
-    S.posMarker = L.marker(pos2, { icon: ui, zIndexOffset: 1000 }).addTo(S.mapN);
-    S.mapN.setView(pos2, 15);
+    const ui = L.divIcon({html:'<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;border:3px solid white;box-shadow:0 2px 8px rgba(29,158,117,.6)"></div>',iconAnchor:[9,9],className:''});
+    S.posMarker = L.marker([lat,lng],{icon:ui,zIndexOffset:1000}).addTo(S.mapN);
+    S.mapN.setView([lat,lng], 15);
   } else {
-    S.posMarker.setLatLng(pos2);
+    S.posMarker.setLatLng([lat,lng]);
   }
 
-  // ── Speed: use GPS speed field if available, else derive from positions ──
+  // Speed
   let spdKmh = 0;
   if (speed != null && speed >= 0) {
-    spdKmh = speed * 3.6; // m/s → km/h
+    spdKmh = speed * 3.6;
   } else if (n.lastPos && n.lastPosTime) {
-    const dtSec = (Date.now() - n.lastPosTime) / 1000;
-    if (dtSec > 0) {
-      const dm = haversine(n.lastPos[0], n.lastPos[1], lat, lng) * 1000; // metres
-      spdKmh = (dm / dtSec) * 3.6;
-    }
+    const dt = (Date.now() - n.lastPosTime) / 1000;
+    if (dt > 0 && dt < 30) spdKmh = haversine(n.lastPos[0],n.lastPos[1],lat,lng)*1000/dt*3.6;
   }
-
-  // Clamp noise: below 1.5 km/h treat as stationary, above 80 (bike) / 25 (walk) treat as GPS jump
-  const maxPlausible = S.mode === 'bike' ? 80 : 25;
-  if (spdKmh < 1.5) spdKmh = 0;
-  if (spdKmh > maxPlausible) spdKmh = 0;
-
+  const maxSpd = n.isBike ? 80 : 25;
+  if (spdKmh < 1.5 || spdKmh > maxSpd) spdKmh = 0;
   n.lastSpd = spdKmh;
   if (spdKmh > n.maxSpd) n.maxSpd = spdKmh;
+  const isMoving = spdKmh > 1.5;
 
-  // ── Distance: only add when actually moving ──
-  if (n.lastPos && spdKmh > 1.5) {
-    const d = haversine(n.lastPos[0], n.lastPos[1], lat, lng);
-    if (d > 0 && d < 0.2) {
-      n.dist += d;
-    }
-    // Count moving time (seconds since last pos update)
-    if (n.lastPosTime) {
-      const dt = (Date.now() - n.lastPosTime) / 1000;
-      if (dt > 0 && dt < 30) n.movingSeconds += dt;
+  // ── BIKE: pause timer while stationary ────────────────────────────────
+  if (n.isBike) {
+    if (!isMoving && !n.paused) {
+      n.paused = true; n.stopStartTime = Date.now();
+      setNavStatus('paused');
+    } else if (isMoving && n.paused) {
+      n.paused = false; n.stopStartTime = null;
+      setNavStatus('active');
     }
   }
 
-  n.lastPos = [lat, lng];
-  n.lastPosTime = Date.now();
+  // ── HIKE: track stop, show overlay, auto-resume on move ───────────────
+  if (!n.isBike) {
+    if (!isMoving) {
+      if (!n.stopStartTime) n.stopStartTime = Date.now();
+    } else {
+      // User moved — accumulate stop time and auto-resume
+      if (n.stopStartTime) {
+        n.totalStopSeconds += Math.floor((Date.now()-n.stopStartTime)/1000);
+        n.stopStartTime = null; n.stopSeconds = 0;
+      }
+      if (n.paused) {
+        n.paused = false;
+        hidePauseOverlay();
+        setNavStatus('active');
+        speak('Wznowiono ćwiczenie.');
+      }
+    }
+  }
 
-  // Record speed sample (only when GPS is ready)
-  n.speedHistory.push({ t: Date.now(), spd: spdKmh });
+  // Distance — only when moving; bike skips if paused
+  if (isMoving && n.lastPos && !(n.isBike && n.paused)) {
+    const d = haversine(n.lastPos[0],n.lastPos[1],lat,lng);
+    if (d > 0 && d < 0.2) {
+      n.dist += d;
+      if (n.lastPosTime) {
+        const dt = (Date.now()-n.lastPosTime)/1000;
+        if (dt > 0 && dt < 30) n.movingSeconds += dt;
+      }
+    }
+  }
+
+  n.lastPos = [lat,lng];
+  n.lastPosTime = Date.now();
+  n.speedHistory.push({t:Date.now(), spd:spdKmh});
 }
 
 function navTick() {
   const n = S.nav; if (!n) return;
+  if (!n.gpsReady) return;
 
-  if (!n.gpsReady) {
-    $('ln-spd').textContent = '…';
-    $('ln-dist').textContent = '…';
-    $('ln-time').textContent = '…';
-    $('ln-kcal').textContent = '…';
-    return;
+  // Update hike stop counter and overlay
+  if (!n.isBike && n.stopStartTime) {
+    n.stopSeconds = Math.floor((Date.now()-n.stopStartTime)/1000);
+    const mm = Math.floor(n.stopSeconds/60).toString().padStart(2,'0');
+    const ss = (n.stopSeconds%60).toString().padStart(2,'0');
+    const el = $('pause-stop-timer'); if (el) el.textContent = mm+':'+ss;
+
+    if (n.stopSeconds >= HIKE_WARN_SEC && !n.paused) {
+      n.paused = true;
+      setNavStatus('paused');
+      showPauseOverlay(n.stopSeconds, false);
+    }
+    if (n.stopSeconds >= HIKE_PAUSE_SEC) {
+      showPauseOverlay(n.stopSeconds, true);
+    }
   }
 
-  const elapsed = Math.floor((Date.now() - n.startTime) / 1000);
-  const mm = Math.floor(elapsed / 60).toString().padStart(2, '0');
-  const ss = (elapsed % 60).toString().padStart(2, '0');
+  // Elapsed time: bike = moving only; hike = total
+  const elapsed = n.isBike
+    ? Math.floor(n.movingSeconds)
+    : Math.floor((Date.now()-n.startTime)/1000);
+
+  const mm = Math.floor(elapsed/60).toString().padStart(2,'0');
+  const ss = (elapsed%60).toString().padStart(2,'0');
   const distKm = fx(n.dist, 2);
   const kcal = Math.round(distKm * n.kcalPerKm);
-
-  // Current speed — show 0.0 when stationary
   const curSpd = fx(n.lastSpd, 1);
-  const remainKm = Math.max(0, fx((n.route.distKm||0) - distKm, 1));
+  const remainKm = Math.max(0, fx((n.route.distKm||0)-distKm, 1));
 
-  $('ln-spd').textContent = curSpd.toFixed(1);
+  const spdEl = $('ln-spd');
+  if (spdEl) {
+    spdEl.textContent = (n.paused && n.isBike) ? '⏸' : curSpd.toFixed(1);
+    spdEl.className = 'lv big ' + (n.paused ? 'paused' : 'green');
+  }
   $('ln-dist').textContent = distKm.toFixed(2);
-  $('ln-time').textContent = mm + ':' + ss;
+  const timeEl = $('ln-time');
+  if (timeEl) {
+    timeEl.textContent = mm+':'+ss;
+    timeEl.className = 'lv big ' + (n.paused ? 'paused' : 'amber');
+  }
   $('ln-kcal').textContent = kcal;
 
-  // Voice alert check every 10s (not every tick for performance)
-  if (elapsed % 10 === 0 && distKm > 0) {
-    checkVoiceAlerts(distKm, remainKm, curSpd);
+  if (elapsed % 10 === 0 && distKm > 0) checkVoiceAlerts(distKm, remainKm, curSpd);
+}
+
+function setNavStatus(state) {
+  const pill = $('nav-status-pill'), txt = $('nav-status-text');
+  if (!pill || !txt) return;
+  const dot = pill.querySelector('.nav-status-dot');
+  if (state === 'active') {
+    pill.className='nav-status-pill';
+    txt.textContent = S.mode==='bike' ? '🚴 Jedzie' : '🚶 Idzie';
+    if (dot) dot.className='nav-status-dot pulse';
+  } else if (state === 'paused') {
+    pill.className='nav-status-pill paused';
+    txt.textContent = S.mode==='bike' ? '⏸ Pauza' : '⏸ Postój';
+    if (dot) dot.className='nav-status-dot';
+  } else {
+    pill.className='nav-status-pill';
+    txt.textContent='⏳ Czeka na GPS';
+    if (dot) dot.className='nav-status-dot pulse';
   }
+}
+
+function showPauseOverlay(stopSec, longStop) {
+  const overlay=$('pause-overlay'); if (!overlay) return;
+  const mm=Math.floor(stopSec/60).toString().padStart(2,'0');
+  const ss=(stopSec%60).toString().padStart(2,'0');
+  const title=$('pause-title'), sub=$('pause-sub');
+  if (longStop) {
+    if (title) title.textContent='Długi postój';
+    if (sub) sub.textContent=`Stoisz już ${mm}:${ss}. Zakończyć ćwiczenie?`;
+  } else {
+    if (title) title.textContent='Zatrzymanie';
+    if (sub) sub.textContent='Ruszysz się? Ćwiczenie wznowi się automatycznie.';
+  }
+  overlay.classList.add('show');
+}
+
+function hidePauseOverlay() {
+  const o=$('pause-overlay'); if(o) o.classList.remove('show');
+}
+
+function resumeFromPause() {
+  const n=S.nav; if(!n) return;
+  n.paused=false; n.stopStartTime=null; n.stopSeconds=0;
+  hidePauseOverlay(); setNavStatus('active');
 }
 
 function centerOnUser() {
@@ -1477,6 +1601,7 @@ function stopNav() {
   if (S.posMarker){ S.mapN.removeLayer(S.posMarker); S.posMarker = null; }
   releaseWakeLock();
   window.speechSynthesis?.cancel();
+  hidePauseOverlay();
   showSummary(n);
   S.nav = null;
 }
@@ -1484,39 +1609,35 @@ function stopNav() {
 // ── Summary ───────────────────────────────────────────────────────────────
 function showSummary(n) {
   showScreen('scr-summary');
-  const elapsed = n.startTime ? Math.floor((Date.now() - n.startTime) / 1000) : 0;
+  const totalElapsed = n.startTime ? Math.floor((Date.now() - n.startTime) / 1000) : 0;
   const distKm = fx(n.dist, 2);
-  const mm = Math.floor(elapsed / 60), ss = elapsed % 60;
-
-  // Average speed = distance / time MOVING (not total time including stops)
-  const movSec = n.movingSeconds > 5 ? n.movingSeconds : elapsed;
-  const avgSpd = movSec > 0 && distKm > 0 ? fx(distKm / (movSec / 3600), 1) : 0;
-
+  const movSec = n.movingSeconds > 5 ? Math.floor(n.movingSeconds) : totalElapsed;
+  const stopSec = !n.isBike ? (n.totalStopSeconds || 0) : 0;
+  const mm = Math.floor(movSec/60), ss = movSec%60;
+  const avgSpd = movSec > 0 && distKm > 0 ? fx(distKm/(movSec/3600),1) : 0;
   const kcal = Math.round(distKm * n.kcalPerKm);
-  // Pace in min/km based on moving time
-  const paceSecPerKm = distKm > 0 ? Math.round(movSec / distKm) : 0;
-  const pace = paceSecPerKm > 0
-    ? `${Math.floor(paceSecPerKm/60)}'${(paceSecPerKm%60).toString().padStart(2,'0')}"`
-    : '—';
+  const paceSecPerKm = distKm > 0 ? Math.round(movSec/distKm) : 0;
+  const pace = paceSecPerKm > 0 ? `${Math.floor(paceSecPerKm/60)}'${(paceSecPerKm%60).toString().padStart(2,'0')}"` : '—';
   const mode = S.mode === 'bike' ? '🚴' : '🥾';
+  const stopMm = Math.floor(stopSec/60), stopSs = stopSec%60;
+  const stopCard = (!n.isBike && stopSec > 0)
+    ? `<div class="scard"><span class="sicon">🧍</span><div class="sl">Czas postoju</div><div class="sv">${stopMm}m ${stopSs}s</div></div>`
+    : `<div class="scard"><span class="sicon">⏰</span><div class="sl">Tempo /km</div><div class="sv">${pace}</div></div>`;
 
-  $('sum-title').textContent=n.route.name+' · ukończona!';
-  $('sum-sub').textContent=`${mode} ${S.mode==='bike'?'Jazda rowerem':'Marsz'} · ${new Date().toLocaleDateString('pl')}`;
+  $('sum-title').textContent = n.route.name + ' · ukończona!';
+  $('sum-sub').textContent = `${mode} ${S.mode==='bike'?'Jazda rowerem':'Marsz'} · ${new Date().toLocaleDateString('pl')}`;
 
-  $('sum-grid').innerHTML=`
+  $('sum-grid').innerHTML = `
     <div class="scard"><span class="sicon">📏</span><div class="sl">Dystans</div><div class="sv">${distKm}<span class="su"> km</span></div></div>
-    <div class="scard"><span class="sicon">⏱️</span><div class="sl">Czas</div><div class="sv">${mm}m ${ss}s</div></div>
+    <div class="scard"><span class="sicon">⏱️</span><div class="sl">${n.isBike?'Czas jazdy':'Czas aktywny'}</div><div class="sv">${mm}m ${ss}s</div></div>
     <div class="scard"><span class="sicon">⚡</span><div class="sl">Śr. prędkość</div><div class="sv">${avgSpd}<span class="su"> km/h</span></div></div>
     <div class="scard"><span class="sicon">🚀</span><div class="sl">Maks. prędkość</div><div class="sv">${fx(n.maxSpd,1)}<span class="su"> km/h</span></div></div>
     <div class="scard"><span class="sicon">🔥</span><div class="sl">Kalorie</div><div class="sv">${kcal}<span class="su"> kcal</span></div></div>
-    <div class="scard"><span class="sicon">⏰</span><div class="sl">Tempo</div><div class="sv">${pace}</div></div>
+    ${stopCard}
   `;
 
-  // Speed chart
   drawSpeedChart(n.speedHistory);
-
-  // Store summary for sharing
-  S.lastSummary={distKm,elapsed,avgSpd,maxSpd:fx(n.maxSpd,1),kcal,route:n.route.name};
+  S.lastSummary = {distKm, elapsed:movSec, avgSpd, maxSpd:fx(n.maxSpd,1), kcal, route:n.route.name};
 }
 
 function drawSpeedChart(history) {
